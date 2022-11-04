@@ -1,16 +1,16 @@
-#LCAI-APARK SOFTWARE
+# LCAI-APARK SOFTWARE
 
-##Introduction
-
-
-##Code structure
+## Introduction
 
 
-##Build procedure
+## Code structure
 
-##Build FPGA
 
-#Run reference design example
+## Build procedure
+
+## Build FPGA
+
+# Run reference design example
 
 /*Copyright 2019-2021 T-Head Semiconductor Co., Ltd.
 
