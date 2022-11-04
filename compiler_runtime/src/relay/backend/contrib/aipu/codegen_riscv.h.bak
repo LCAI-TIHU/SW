@@ -1,0 +1,2721 @@
+
+/*
+ * Inspur.
+ * This is a new or modified file.
+ */
+
+#ifndef TVM_RELAY_BACKEND_CONTRIB_AIPU_CODEGEN_RISCV_H_
+#define TVM_RELAY_BACKEND_CONTRIB_AIPU_CODEGEN_RISCV_H_
+
+#include "rapidjson/document.h"
+#include "rapidjson/filereadstream.h"
+#include "rapidjson/error/en.h"
+#include <tvm/relay/expr_functor.h>
+#include <tvm/runtime/module.h>
+#include <tvm/relay/transform.h>
+#include <tvm/relay/type.h>
+#include <tvm/runtime/ndarray.h>
+#include <tvm/runtime/object.h>
+#include <tvm/relay/attrs/image.h>
+#include <tvm/relay/attrs/reduce.h>
+
+#include <fstream>
+#include <numeric>
+#include <sstream>
+#include <string>
+
+#include "../../utils.h"
+#include "../../../../runtime/contrib/aipu/aipu_runtime.h"
+
+namespace tvm {
+namespace relay {
+namespace contrib {
+namespace aipu {
+
+  using Riscv_code = tvm::runtime::contrib::Riscv_code;
+  using datatype_enum = tvm::runtime::contrib::datatype_enum;
+  using operator_enum = tvm::runtime::contrib::operator_enum;
+  using Conv2d_param = tvm::runtime::contrib::Conv2d_param;
+  using Add_param = tvm::runtime::contrib::Add_param;
+  using Dense_param = tvm::runtime::contrib::Dense_param;
+  using Relu_param = tvm::runtime::contrib::Relu_param;
+  using Softmax_param = tvm::runtime::contrib::Softmax_param;
+  using Reshape_param = tvm::runtime::contrib::Reshape_param;
+  using Pool2d_param = tvm::runtime::contrib::Pool2d_param;
+  using Resize_param = tvm::runtime::contrib::Resize_param;
+  using Concat_param = tvm::runtime::contrib::Concat_param;
+  using Sigmoid_param = tvm::runtime::contrib::Sigmoid_param;
+  using Strided_slice_param = tvm::runtime::contrib::Strided_slice_param;
+  using Multiply_param = tvm::runtime::contrib::Multiply_param;
+  using Exp_param = tvm::runtime::contrib::Exp_param;
+  using Expand_dims_param = tvm::runtime::contrib::Expand_dims_param;
+  using Take_param = tvm::runtime::contrib::Take_param;
+  using One_hot_param = tvm::runtime::contrib::One_hot_param;
+  using Less_param = tvm::runtime::contrib::Less_param;
+  using Batch_matmul_param = tvm::runtime::contrib::Batch_matmul_param;
+  using Transpose_param = tvm::runtime::contrib::Transpose_param;
+  using Cast_param = tvm::runtime::contrib::Cast_param;
+  using Subtract_param = tvm::runtime::contrib::Subtract_param;
+  using Power_param = tvm::runtime::contrib::Power_param;
+  using Divide_param = tvm::runtime::contrib::Divide_param;
+  using Max_param = tvm::runtime::contrib::Max_param;
+  using Sqrt_param = tvm::runtime::contrib::Sqrt_param;
+  using Erf_param = tvm::runtime::contrib::Erf_param;
+  using Tanh_param = tvm::runtime::contrib::Tanh_param;
+  using Sum_param = tvm::runtime::contrib::Sum_param;
+  using Split_param = tvm::runtime::contrib::Split_param;
+  using Mean_param = tvm::runtime::contrib::Mean_param;
+  using Squeeze_param = tvm::runtime::contrib::Squeeze_param;
+  using Pad_param = tvm::runtime::contrib::Pad_param;
+  using Common_param = tvm::runtime::contrib::Common_param;
+  using Fused_function_offsets = tvm::runtime::contrib::Fused_function_offsets;
+
+  using IntegerArray = Array<Integer>;
+  using namespace backend;
+
+  size_t divRoundUp(size_t size, size_t word_size) {
+    return (size + word_size - 1) / word_size;
+  }
+
+  void set_datatype(const TensorTypeNode *ittype, const TensorTypeNode *wttype,
+                    const TensorTypeNode *ottype, datatype_enum &in, datatype_enum &weight,
+                    datatype_enum &out) {
+    // input datatype
+    // in =  datatype_enum::RINT8;
+    // if (ittype->dtype.code() == DataType::kInt)
+    //   in = datatype_enum::RINT;
+    // else if (ittype->dtype.code() == DataType::kUInt)
+    //   in = datatype_enum::RUINT;
+    // else if (ittype->dtype.code() == DataType::kFloat)
+    //   in = datatype_enum::RFLOAT;
+    // else if (ittype->dtype.code() == DataType::kBFloat && ittype->dtype.bits() == 16)
+    //   in = datatype_enum::RBFLOAT;
+    // else
+    //   LOG(FATAL) << "Datatype not supported ";
+
+    // weight datatype
+    // not all nodes have weights
+    if (wttype) {
+      if (wttype->dtype.code() == DataType::kInt)
+        weight = datatype_enum::RINT;
+      else if (wttype->dtype.code() == DataType::kUInt)
+        weight = datatype_enum::RUINT;
+      else if (wttype->dtype.code() == DataType::kFloat)
+        weight = datatype_enum::RFLOAT;
+      else if (wttype->dtype.code() == DataType::kBFloat && wttype->dtype.bits() == 16)
+        weight = datatype_enum::RBFLOAT;
+      else
+        LOG(FATAL) << "Datatype not supported ";
+    }
+
+    // output datatyp
+    // out =  datatype_enum::RINT8;
+    // if (ottype->dtype.code() == DataType::kInt)
+    //   out = datatype_enum::RINT;
+    // else if (ottype->dtype.code() == DataType::kUInt)
+    //   out = datatype_enum::RUINT;
+    // else if (ottype->dtype.code() == DataType::kFloat)
+    //   out = datatype_enum::RFLOAT;
+    // else if (ottype->dtype.code() == DataType::kBFloat && ottype->dtype.bits() == 16)
+    //   out = datatype_enum::RBFLOAT;
+    // else
+    //   LOG(FATAL) << "Datatype not supported ";
+  }
+
+  class CodegenAIPU : public ExprVisitor {
+  public:
+    explicit CodegenAIPU(const Map<Expr, Array<IntegerArray>> &storage_device_map) {
+      storage_device_map_ = storage_device_map;
+      weight_memory_used_ = 0U;
+      data_memory_used_ = 0U;
+    }
+
+    /*~CodegenAIPU() {
+      for (size_t i = 0; i < riscv_code_.size(); i++) {
+        Riscv_code *p = riscv_code_[i];
+        switch(p->op_type) {
+        case operator_enum::CONV2D:
+          delete []((char *)(((Conv2d_param *)(p->data))->weights));
+          delete (Conv2d_param *)(p->data);
+          break;
+        case operator_enum::DENSE:
+          delete []((char *)(((Dense_param *)(p->data))->weights));
+          delete (Dense_param *)(p->data);
+          break;
+        case operator_enum::ADD:
+          delete []((char *)(((Add_param *)(p->data))->weights));
+          delete (Add_param *)(p->data);
+          break;
+        case operator_enum::RELU:
+          delete (Relu_param *)(p->data);
+          break;
+        case operator_enum::SOFTMAX:
+          delete (Softmax_param *)(p->data);
+          break;
+        case operator_enum::RESHAPE:
+          delete (Reshape_param *)(p->data);
+          break;
+        case operator_enum::POOL2D:
+          delete (Pool2d_param *)(p->data);
+          break;
+        default:
+          break;
+        }
+        delete p;
+      }
+    }*/
+
+    Riscv_code* Conv2d(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::CONV2D);
+      Conv2d_param *param = new Conv2d_param(0);
+      riscv_code->data = (void *)param;
+      const auto* conv2d_attr = call->attrs.as<Conv2DAttrs>();
+      param->input_layout = conv2d_attr->data_layout;
+      param->kernel_layout = conv2d_attr->kernel_layout;
+      param->output_layout = conv2d_attr->out_layout;
+
+      const TensorTypeNode *ittype, *wttype, *ottype;
+      std::vector<int> ishape, wshape, oshape;
+      int istorage_id, wstorage_id, ostorage_id;
+      Constant weight_const;
+      for (auto arg : call->args) {
+        if (arg->IsInstance<CallNode>() || arg->IsInstance<VarNode>()) {
+          ittype = arg->checked_type().as<TensorTypeNode>();
+          ishape = GetShape(arg->checked_type());
+          istorage_id = storage_device_map_[arg][0][0];
+        }
+        else {
+          weight_const = Downcast<Constant>(arg);
+          wttype = arg->checked_type().as<TensorTypeNode>();
+          wshape = GetShape(arg->checked_type());
+          wstorage_id = storage_device_map_[arg][0][0];
+        }
+      }
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      ostorage_id = storage_device_map_[GetRef<Expr>(call)][0][0];
+      size_t weight_size = 1;
+      Common_param common;
+      for (size_t i = 0; i < ishape.size(); i++) {
+        common.input_shape[i] = ishape[i];
+      }
+      for (size_t i = 0; i < wshape.size(); i++) {
+        param->weight_shape[i] = wshape[i];
+        weight_size *= static_cast<size_t>(wshape[i]);
+      }
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+      for (size_t i = 0; i < conv2d_attr->padding.size(); i++) {
+        param->padding[i] = conv2d_attr->padding[i].as<IntImmNode>()->value;
+      }
+      param->kernel[0] = conv2d_attr->kernel_size[0].as<IntImmNode>()->value;
+      param->kernel[1] = conv2d_attr->kernel_size[0].as<IntImmNode>()->value;
+      param->dilation[0] = conv2d_attr->dilation[0].as<IntImmNode>()->value;
+      param->dilation[1] = conv2d_attr->dilation[1].as<IntImmNode>()->value;
+      param->strides[0] = conv2d_attr->strides[0].as<IntImmNode>()->value;
+      param->strides[1] = conv2d_attr->strides[1].as<IntImmNode>()->value;
+      param->num_group  = conv2d_attr->groups;
+
+      set_datatype(ittype, wttype, ottype, common.input_datatype, param->weight_datatype,
+                   common.output_datatype);
+
+      param->weight_size = weight_size * divRoundUp(wttype->dtype.bits() * wttype->dtype.lanes(), 8);
+      param->weights = (void*)(new char[param->weight_size]);
+      memcpy(param->weights, (void*)(weight_const->data->data), param->weight_size);
+
+      if (temporary_data_offset_.find(istorage_id) == temporary_data_offset_.end()) {
+        // network input
+        common.input_offset = data_memory_used_;
+        temporary_data_offset_.insert(std::pair<int,size_t>(istorage_id, data_memory_used_));
+        data_memory_used_ += temporary_data_storage_[istorage_id];
+      }
+      else {
+        common.input_offset = temporary_data_offset_[istorage_id];
+      }
+      if (temporary_data_offset_.find(ostorage_id) == temporary_data_offset_.end()) {
+        common.output_offset = data_memory_used_;
+        temporary_data_offset_.insert(std::pair<int,size_t>(ostorage_id, data_memory_used_));
+        data_memory_used_ += temporary_data_storage_[ostorage_id];
+      }
+      else {
+        common.output_offset = temporary_data_offset_[ostorage_id];
+      }
+      param->com_par = common;
+      if (temporary_data_storage_[wstorage_id] != param->weight_size)
+        LOG(FATAL) << "weight size should be consistent";
+      param->weight_offset = weight_memory_used_;
+      weight_memory_used_ += temporary_data_storage_[wstorage_id];
+      // LOG(INFO) << "input " << param->input_offset << " weight " << param->weight_offset << " output " << param->output_offset;
+      return riscv_code;
+    }
+
+    Riscv_code* Dense(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::DENSE);
+      Dense_param *param = new Dense_param(0);
+      riscv_code->data = (void *)param;
+      const TensorTypeNode *ittype, *wttype, *ottype;
+      std::vector<int> ishape, wshape, oshape;
+      int istorage_id, wstorage_id, ostorage_id;
+      Constant weight_const;
+      for (auto arg : call->args) {
+        if (arg->IsInstance<CallNode>() || arg->IsInstance<VarNode>()) {
+          ittype = arg->checked_type().as<TensorTypeNode>();
+          ishape = GetShape(arg->checked_type());
+          istorage_id = storage_device_map_[arg][0][0];
+        }
+        else {
+          weight_const = Downcast<Constant>(arg);
+          wttype = arg->checked_type().as<TensorTypeNode>();
+          wshape = GetShape(arg->checked_type());
+          wstorage_id = storage_device_map_[arg][0][0];
+        }
+      }
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      ostorage_id = storage_device_map_[GetRef<Expr>(call)][0][0];
+      size_t weight_size = 1;
+      Common_param common;
+      for (size_t i = 0; i < ishape.size(); i++) {
+        common.input_shape[i] = ishape[i];
+      }
+      for (size_t i = 0; i < wshape.size(); i++) {
+        param->weight_shape[i] = wshape[i];
+        weight_size *= static_cast<size_t>(wshape[i]);
+      }
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      set_datatype(ittype, wttype, ottype, common.input_datatype, param->weight_datatype,
+                   common.output_datatype);
+
+      param->weight_size = weight_size * divRoundUp(wttype->dtype.bits() * wttype->dtype.lanes(), 8);
+      param->weights = (void*)(new char[param->weight_size]);
+      memcpy(param->weights, (void*)(weight_const->data->data), param->weight_size);
+
+      if (temporary_data_offset_.find(istorage_id) == temporary_data_offset_.end()) {
+        // network input
+        common.input_offset = data_memory_used_;
+        temporary_data_offset_.insert(std::pair<int,size_t>(istorage_id, data_memory_used_));
+        data_memory_used_ += temporary_data_storage_[istorage_id];
+      }
+      else {
+        common.input_offset = temporary_data_offset_[istorage_id];
+      }
+      if (temporary_data_offset_.find(ostorage_id) == temporary_data_offset_.end()) {
+        common.output_offset = data_memory_used_;
+        temporary_data_offset_.insert(std::pair<int,size_t>(ostorage_id, data_memory_used_));
+        data_memory_used_ += temporary_data_storage_[ostorage_id];
+      }
+      else {
+        common.output_offset = temporary_data_offset_[ostorage_id];
+      }
+      param->com_par = common;
+      if (temporary_data_storage_[wstorage_id] != param->weight_size)
+        LOG(FATAL) << "weight size should be consistent";
+      param->weight_offset = weight_memory_used_;
+      weight_memory_used_ += temporary_data_storage_[wstorage_id];
+      // LOG(INFO) << "input " << param->input_offset << " weight " << param->weight_offset << " output " << param->output_offset;
+      return riscv_code;
+    }
+
+    Riscv_code* Relu(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::RELU);
+      Relu_param *param = new Relu_param(0);
+      riscv_code->data = (void *)param;
+      datatype_enum useless;
+      const TensorTypeNode *ittype, *ottype;
+      std::vector<int> ishape, oshape;
+      ittype = call->args[0]->checked_type().as<TensorTypeNode>();
+      ishape = GetShape(call->args[0]->checked_type());
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape.size(); i++) {
+        common.input_shape[i] = ishape[i];
+      }
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      set_datatype(ittype, NULL, ottype, common.input_datatype, useless,
+                   common.output_datatype);
+
+      auto it = expr_execute_order_.find(call->args[0]);
+      if (it != expr_execute_order_.end()) {
+        common.input_offset = it->second;
+      }
+      else {
+        // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+        common.input_offset = (size_t) - 1; // MAX value size_t can hold
+      }
+      param->com_par = common;
+      // LOG(INFO) << "input " << param->input_offset << " weight NULL" << " output " << param->output_offset;
+      return riscv_code;
+    }
+
+    Riscv_code* Softmax(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::SOFTMAX);
+      Softmax_param *param = new Softmax_param(0);
+      riscv_code->data = (void *)param;
+      datatype_enum useless;
+      const TensorTypeNode *ittype, *ottype;
+      std::vector<int> ishape, oshape;
+      ittype = call->args[0]->checked_type().as<TensorTypeNode>();
+      ishape = GetShape(call->args[0]->checked_type());
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape.size(); i++) {
+        if(ishape.size() == 2) {
+          common.input_shape[i+2] = ishape[i];
+        } else {
+          common.input_shape[i] = ishape[i];
+        }
+        LOG(INFO) << "### Softmax ishape[" << i <<"]:" << ishape[i];
+      }
+      for (size_t i = 0; i < oshape.size(); i++) {
+        if(oshape.size() == 2) {
+          common.output_shape[i+2] = oshape[i];
+        } else {
+          common.output_shape[i] = oshape[i];
+        }
+        LOG(INFO) << "### Softmax ishape[" << i <<"]:" << oshape[i];
+      }
+
+      set_datatype(ittype, NULL, ottype, common.input_datatype, useless,
+                   common.output_datatype);
+
+      auto it = expr_execute_order_.find(call->args[0]);
+      if (it != expr_execute_order_.end()) {
+        common.input_offset = it->second;
+      }
+      else {
+        // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+        common.input_offset = (size_t) - 1; // MAX value size_t can hold
+      }
+  
+      common.input_datatype = datatype_enum::RFLOAT;
+      common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+
+      if (iscale_[0] > 0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+      } 
+      if (oscale_ > 0) {
+        common.oscale[0] = oscale_;
+        common.output_datatype = datatype_enum::RINT8;
+      }
+
+      LOG(INFO) << "### Softmax iscale_: " << iscale_[0] << ", input_datatype: " << common.input_datatype;
+      LOG(INFO) << "### Softmax oscale_: " << oscale_ << ", output_datatype: " << common.output_datatype;
+
+
+      param->com_par = common;
+
+      // LOG(INFO) << "input " << param->input_offset << " weight NULL" << " output " << param->output_offset;
+      return riscv_code;
+    }
+
+    Riscv_code* Reshape(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::RESHAPE);
+      Reshape_param *param = new Reshape_param(0);
+      riscv_code->data = (void *)param;
+      datatype_enum useless;
+      const TensorTypeNode *ittype, *ottype;
+      std::vector<int> ishape, oshape;
+      ittype = call->args[0]->checked_type().as<TensorTypeNode>();
+      ishape = GetShape(call->args[0]->checked_type());
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+
+      for (size_t i = 0; i < ishape.size(); i++) {
+        if(ishape.size() == 2) {
+          common.input_shape[i+2] = ishape[i];
+        } else {
+          common.input_shape[i] = ishape[i];
+        }
+        LOG(INFO) << "### Reshape ishape[" << i <<"]:" << ishape[i];
+      }
+
+      for (size_t i = 0; i < oshape.size(); i++) {
+          if(oshape.size() == 2) {
+            common.output_shape[i+2] = oshape[i];
+          } else {
+            common.output_shape[i] = oshape[i];
+          }
+          LOG(INFO) << "### Reshape oshape[" << i <<"]:" << oshape[i];
+      }
+
+      set_datatype(ittype, NULL, ottype, common.input_datatype, useless,
+                   common.output_datatype);
+      
+
+      auto it = expr_execute_order_.find(call->args[0]);
+      if (it != expr_execute_order_.end()) {
+        common.input_offset = it->second;
+      }
+      else {
+        // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+        common.input_offset = (size_t) - 1; // MAX value size_t can hold
+      }
+
+      common.input_datatype = datatype_enum::RFLOAT;
+      common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      
+      if (iscale_[0] > 0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+      }
+      if (oscale_ > 0) {
+        common.oscale[0] = oscale_;
+        common.output_datatype = datatype_enum::RINT8;
+      }
+
+      LOG(INFO) << "### Reshape iscale_: " << iscale_[0] << ", input_datatype: " << common.input_datatype;
+      LOG(INFO) << "### Reshape oscale_: " << oscale_ << ", output_datatype: " << common.output_datatype;
+    
+      param->com_par = common;
+      return riscv_code;
+    }
+
+    Riscv_code* Pool2d(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::POOL2D);
+      Pool2d_param *param = new Pool2d_param(0);
+      riscv_code->data = (void *)param;
+      const auto* op_node = call->op.as<OpNode>();
+      const auto op_name = GetRef<Op>(op_node)->name;
+      if (op_name == "nn.max_pool2d") {
+        param->pool_type = 0;
+        const auto* max_attr = call->attrs.as<MaxPool2DAttrs>();
+        for (size_t i = 0; i < max_attr->padding.size(); i++) {
+          param->padding[i] = max_attr->padding[i].as<IntImmNode>()->value;
+        }
+        param->kernel[0] = max_attr->pool_size[0].as<IntImmNode>()->value;
+        param->kernel[1] = max_attr->pool_size[1].as<IntImmNode>()->value;
+        param->strides[0] = max_attr->strides[0].as<IntImmNode>()->value;
+        param->strides[1] = max_attr->strides[1].as<IntImmNode>()->value;
+        // param->dilation[0] = max_attr->dilation[0].as<IntImmNode>()->value;
+        // param->dilation[1] = max_attr->dilation[1].as<IntImmNode>()->value;
+        param->input_layout = max_attr->layout;
+        // param->output_layout = max_attr->out_layout;
+        param->ceil_mode = max_attr->ceil_mode;
+      }
+      else if (op_name == "nn.avg_pool2d") {
+        param->pool_type = 1;
+        const auto* avg_attr = call->attrs.as<AvgPool2DAttrs>();
+        for (size_t i = 0; i < avg_attr->padding.size(); i++) {
+          param->padding[i] = avg_attr->padding[i].as<IntImmNode>()->value;
+        }
+        param->kernel[0] = avg_attr->pool_size[0].as<IntImmNode>()->value;
+        param->kernel[1] = avg_attr->pool_size[1].as<IntImmNode>()->value;
+        param->strides[0] = avg_attr->strides[0].as<IntImmNode>()->value;
+        param->strides[1] = avg_attr->strides[1].as<IntImmNode>()->value;
+        // param->dilation[0] = avg_attr->dilation[0].as<IntImmNode>()->value;
+        // param->dilation[1] = avg_attr->dilation[1].as<IntImmNode>()->value;
+        param->input_layout = avg_attr->layout;
+        // param->output_layout = avg_attr->out_layout;
+        param->ceil_mode = avg_attr->ceil_mode;
+        param->count_include_pad = avg_attr->count_include_pad;
+      }
+
+      datatype_enum useless;
+      const TensorTypeNode *ittype, *ottype;
+      std::vector<int> ishape, oshape;
+      ittype = call->args[0]->checked_type().as<TensorTypeNode>();
+      ishape = GetShape(call->args[0]->checked_type());
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape.size(); i++) {
+        common.input_shape[i] = ishape[i];
+      }
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      set_datatype(ittype, NULL, ottype, common.input_datatype, useless,
+                   common.output_datatype);
+
+      auto it = expr_execute_order_.find(call->args[0]);
+      if (it != expr_execute_order_.end()) {
+        common.input_offset = it->second;
+      }
+      else {
+        // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+        common.input_offset = (size_t) - 1; // MAX value size_t can hold
+      } 
+
+      common.input_datatype = datatype_enum::RINT8;
+      common.output_datatype = datatype_enum::RINT8;  // RFLOAT
+
+      param->com_par = common;
+      // LOG(INFO) << "input " << param->input_offset << " weight NULL" << " output " << param->output_offset;
+      return riscv_code;
+    }
+
+    Riscv_code* Add(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::ADD);
+      Add_param *param = new Add_param(0);
+      riscv_code->data = (void *)param;
+      const TensorTypeNode *ittype[2], *wttype, *ottype;
+      std::vector<int> ishape[2], wshape, oshape;
+      int wstorage_id;
+      size_t input_offset[2];
+      Constant weight_const;
+      int index = 0;
+      for (auto arg : call->args) {
+        if (arg->IsInstance<CallNode>() || arg->IsInstance<VarNode>()) {
+          ittype[index] = arg->checked_type().as<TensorTypeNode>();
+          ishape[index] = GetShape(arg->checked_type());
+          auto it = expr_execute_order_.find(arg);
+          if (it != expr_execute_order_.end()) {
+            input_offset[index] = it->second;
+          }
+          else {
+            // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+            input_offset[index] = (size_t) - 1; // MAX value size_t can hold
+          }
+          index++;
+        }
+        else {
+          weight_const = Downcast<Constant>(arg);
+          wttype = arg->checked_type().as<TensorTypeNode>();
+          wshape = GetShape(arg->checked_type());
+          wstorage_id = storage_device_map_[arg][0][0];
+          param->add_type = true;
+        }
+      }
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape[0].size(); i++) {
+        common.input_shape[i] = ishape[0][i];
+      }
+      common.input_offset = input_offset[0];
+      if (param->add_type) {
+        size_t weight_size = 1;
+        for (size_t i = 0; i < wshape.size(); i++) {
+          param->weight_shape[i] = wshape[i];
+          weight_size *= static_cast<size_t>(wshape[i]);
+        }
+
+        set_datatype(ittype[0], wttype, ottype, common.input_datatype, param->weight_datatype,
+                     common.output_datatype);
+
+        param->weight_size = weight_size * divRoundUp(wttype->dtype.bits() * wttype->dtype.lanes(), 8);
+        param->weights = (void*)(new char[param->weight_size]);
+        memcpy(param->weights, (void*)(weight_const->data->data), param->weight_size);
+        if (param->weight_size != temporary_data_storage_[wstorage_id])
+          LOG(FATAL) << "weight size should be consistent";
+        param->weight_offset = weight_memory_used_;
+        weight_memory_used_ += temporary_data_storage_[wstorage_id];
+      }
+      else {
+        for (size_t i = 0; i < ishape[1].size(); i++) {
+          param->weight_shape[i] = ishape[1][i];
+        }
+        param->weights = NULL;
+        param->weight_size = 0;
+        set_datatype(ittype[0], ittype[1], ottype, common.input_datatype, param->weight_datatype,
+                     common.output_datatype);
+        param->weight_offset = input_offset[1];
+      }
+
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      // if (iscale_[0] != 1.0) {
+      //   common.iscale[0] = iscale_[0];
+      //   common.input_datatype = datatype_enum::RINT8;
+      //   common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      //   LOG(INFO) << "### Add iscale_[0]: " << iscale_[0];
+      //   iscale_[0] = 1.0;
+      // } else {
+      //   LOG(INFO) << "### Add iscale_ None";
+      //   common.input_datatype = datatype_enum::RFLOAT;
+      //   common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      // }
+
+      // if (iscale_[0] != 1.0) { // Tensor+Tensor 第一个输入
+      //   LOG(INFO) << "### Add iscale_[0]: " << iscale_[0];
+      //   common.iscale[0] = iscale_[0];
+      //   common.input_datatype = datatype_enum::RINT8;
+      // } else {
+      //   common.input_datatype = datatype_enum::RFLOAT;
+      // }
+
+      // if (iscale_[1] != 1.0) {  // Tensor+Tensor 第二个输入
+      //   LOG(INFO) << "### Add iscale_[1]: " << iscale_[1];
+      //   common.iscale[1] = iscale_[1];
+      //   param->weight_datatype = datatype_enum::RINT8;
+      // } else {
+      //   param->weight_datatype = datatype_enum::RFLOAT;
+      // }      
+
+      // if (oscale_ != 1.0) { // 单输出
+      //   LOG(INFO) << "### Add oscale_: " << oscale_;
+      //   common.oscale[0] = oscale_;
+      //   common.output_datatype = datatype_enum::RINT8;
+      // } else {
+      //   common.output_datatype = datatype_enum::RFLOAT;
+      // }
+
+      common.input_datatype = datatype_enum::RFLOAT;
+      common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      
+      if (iscale_[0] > 0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+      }
+      if (oscale_ > 0) {
+        common.oscale[0] = oscale_;
+        common.output_datatype = datatype_enum::RINT8;
+      }
+
+      LOG(INFO) << "### Add iscale_: " << iscale_[0] << ", input_datatype: " << common.input_datatype;
+      LOG(INFO) << "### Add oscale_: " << oscale_ << ", output_datatype: " << common.output_datatype;
+
+
+
+      param->com_par = common;
+      // LOG(INFO) << "input " << param->input_offset << " weight " << param->weight_offset << " output " << param->output_offset;
+      return riscv_code;
+    }
+
+    Riscv_code* Resize(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::RESIZE);
+      Resize_param *param = new Resize_param(0);
+      riscv_code->data = (void *)param;
+      const auto* resizeAttrs = call->attrs.as<ResizeAttrs>();
+      param->layout = resizeAttrs->layout;
+      param->method = resizeAttrs->method;
+      param->coordinate_transformation_mode = resizeAttrs->coordinate_transformation_mode;
+      param->rounding_method = resizeAttrs->rounding_method;
+      param->bicubic_alpha = resizeAttrs->bicubic_alpha;
+      param->bicubic_exclude = resizeAttrs->bicubic_exclude;
+      datatype_enum useless;
+      const TensorTypeNode *ittype, *ottype;
+      std::vector<int> ishape, oshape;
+      ittype = call->args[0]->checked_type().as<TensorTypeNode>();
+      ishape = GetShape(call->args[0]->checked_type());
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape.size(); i++) {
+        common.input_shape[i] = ishape[i];
+      }
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      set_datatype(ittype, NULL, ottype, common.input_datatype, useless,
+                   common.output_datatype);
+
+      common.input_datatype = datatype_enum::RFLOAT;
+      common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+
+      if (iscale_[0] > 0) {
+        common.iscale[0] = iscale_[0];
+        common.oscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+        common.output_datatype = datatype_enum::RINT8;
+      }
+      // if (oscale_ > 0) {
+      //   common.oscale[0] = oscale_;
+      //   common.output_datatype = datatype_enum::RINT8;
+      // }
+
+      LOG(INFO) << "### Resize iscale_: " << iscale_[0] << ", input_datatype: " << common.input_datatype;
+      LOG(INFO) << "### Resize oscale_: " << oscale_ << ", output_datatype: " << common.output_datatype;
+
+      auto it = expr_execute_order_.find(call->args[0]);
+      if (it != expr_execute_order_.end()) {
+        common.input_offset = it->second;
+      }
+      else {
+        // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+        common.input_offset = (size_t) - 1; // MAX value size_t can hold
+      } 
+      param->com_par = common;
+      // LOG(INFO) << "input " << param->input_offset << " weight NULL" << " output " << param->output_offset;
+      return riscv_code;
+    }
+
+    // need to set input and output datatype
+    Riscv_code* Concat(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::CONCAT);
+      Concat_param *param = new Concat_param(0);
+      riscv_code->data = (void *)param;
+      const auto* concatenateAttrs = call->attrs.as<ConcatenateAttrs>();
+      if (concatenateAttrs->axis == -1){
+        param->axis = 3;
+      } else {
+        param->axis = concatenateAttrs->axis;
+      }
+      LOG(INFO) << "### Concat param->axis: " << param->axis;
+      std::cout << "###### pass ######" << std::endl;
+      int input_number_ = 0;
+      if (call->args[0]->IsInstance<TupleNode>()) {
+        std::cout << "###### case-0 ######" << std::endl;
+        auto tuple = Downcast<Tuple>(call->args[0]);
+        for (auto field : tuple->fields) {
+          input_number_++;
+          auto ishape = GetShape(field->checked_type());
+          for (size_t i = 0; i < ishape.size(); i++)
+            param->input_shape.push_back(ishape[i]);
+          for (size_t i = ishape.size(); i < 4; i++)
+            param->input_shape.push_back(0);
+
+          auto it = expr_execute_order_.find(field);
+          if (it != expr_execute_order_.end()) {
+            param->input_offset.push_back(it->second);
+          }
+          else {
+            // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+            param->input_offset.push_back((size_t) - 1); // MAX value size_t can hold
+          }
+       }
+      }
+      else if (call->args[0]->IsInstance<VarNode>()) {
+        std::cout << "###### case-1 ######" << std::endl;
+        // network input
+        auto var = Downcast<Var>(call->args[0]);
+        auto tupletype = Downcast<TupleType>(var->type_annotation);
+        for (auto field : tupletype->fields) {
+          input_number_++;
+          size_t tmp_size = 1;
+          size_t tmp_val;
+          int count = 0;
+          const auto* tmptype = field.as<TensorTypeNode>();
+          for (IndexExpr dim : tmptype->shape) {
+            const int64_t* pval = tir::as_const_int(dim);
+            ICHECK(pval != nullptr) << "Cannot allocate memory symbolic tensor shape " << tmptype->shape;
+            ICHECK_GE(*pval, 0) << "Cannot allocate memory for tensor with negative shape" << *pval;
+            tmp_val = static_cast<size_t>(pval[0]);
+            tmp_size *= tmp_val;
+            param->input_shape.push_back(tmp_val);
+            count++;
+          }
+          tmp_size *= divRoundUp(tmptype->dtype.bits() * tmptype->dtype.lanes(), 8);
+          for (int i = count; i < 4; i++)
+            param->input_shape.push_back(0);
+
+          // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+          param->input_offset.push_back((size_t) - 1); // MAX value size_t can hold
+        }
+      }
+      else {
+        std::cout << "###### case-2 ######" << std::endl;
+        LOG(FATAL) << "Concat input must be tuplenode";
+      }
+      Common_param common;
+      auto oshape = GetShape(call->checked_type());
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+      for (size_t i = 0; i < 4; i++) {
+        common.input_shape[i] = param->input_shape[i];
+      }
+
+      common.input_offset = param->input_offset[0];
+
+      // common.input_datatype = datatype_enum::RFLOAT;
+      common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      
+      for (int i=0; i<10; ++i) {
+        if (iscale_[i] > 0) {
+          common.iscale[i] = iscale_[i];
+          // common.input_datatype = datatype_enum::RINT8;  // 固件会自动获取
+        }
+      }
+
+      if (oscale_ > 0) {
+        common.oscale[0] = oscale_;
+        common.output_datatype = datatype_enum::RINT8;
+      }
+
+      LOG(INFO) << "### Concat iscale_[0]: " << iscale_[0]  << " iscale_[1]: " << iscale_[1];
+      LOG(INFO) << "### Concat oscale_: " << oscale_ << ", output_datatype: " << common.output_datatype;
+
+      param->com_par = common;
+      // LOG(INFO) << "input " << param->input_offset << " weight NULL" << " output " << param->output_offset;
+      return riscv_code;
+    }
+
+    Riscv_code* Sigmoid(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::SIGMOID);
+      Sigmoid_param *param = new Sigmoid_param(0);
+      riscv_code->data = (void *)param;
+      datatype_enum useless;
+      const TensorTypeNode *ittype, *ottype;
+      std::vector<int> ishape, oshape;
+      ittype = call->args[0]->checked_type().as<TensorTypeNode>();
+      ishape = GetShape(call->args[0]->checked_type());
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape.size(); i++) {
+        common.input_shape[i] = ishape[i];
+      }
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+      
+      set_datatype(ittype, NULL, ottype, common.input_datatype, useless,
+                   common.output_datatype);
+
+      common.input_datatype = datatype_enum::RFLOAT;
+      common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      
+      if (iscale_[0] > 0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+      }
+      if (oscale_ > 0) {
+        common.oscale[0] = oscale_;
+        common.output_datatype = datatype_enum::RINT8;
+      }
+
+      LOG(INFO) << "### Sigmoid iscale_: " << iscale_[0] << ", input_datatype: " << common.input_datatype;
+      LOG(INFO) << "### Sigmoid oscale_: " << oscale_ << ", output_datatype: " << common.output_datatype;
+
+      auto it = expr_execute_order_.find(call->args[0]);
+      if (it != expr_execute_order_.end()) {
+        common.input_offset = it->second;
+      }
+      else {
+        // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+        common.input_offset = (size_t) - 1; // MAX value size_t can hold
+      } 
+      param->com_par = common;
+      // LOG(INFO) << "input " << param->input_offset << " weight NULL" << " output " << param->output_offset;
+      return riscv_code;
+    }
+
+    Riscv_code* Strided_slice(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::STRIDED_SLICE);
+      Strided_slice_param *param = new Strided_slice_param(0);
+      riscv_code->data = (void *)param;
+      const auto* stridedSliceAttrs = call->attrs.as<StridedSliceAttrs>();
+
+      if (stridedSliceAttrs->begin != nullptr) {
+        Array<Integer> begin = (stridedSliceAttrs->begin).value();
+        for (auto it : begin) {
+          param->begin.push_back(it.as<IntImmNode>()->value);
+        }
+      }
+      if (stridedSliceAttrs->end != nullptr) {
+        Array<Integer> end = (stridedSliceAttrs->end).value();
+        for (auto it : end) {
+          param->end.push_back(it.as<IntImmNode>()->value);
+        }
+      }
+      if (stridedSliceAttrs->strides != nullptr) {
+        Array<Integer> strides = (stridedSliceAttrs->strides).value();
+        for (auto it : strides) {
+          param->strides.push_back(it.as<IntImmNode>()->value);
+        }
+      }
+      param->slice_mode = stridedSliceAttrs->slice_mode;
+      datatype_enum useless;
+      const TensorTypeNode *ittype, *ottype;
+      std::vector<int> ishape, oshape;
+      ittype = call->args[0]->checked_type().as<TensorTypeNode>();
+      ishape = GetShape(call->args[0]->checked_type());
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape.size(); i++) {
+        common.input_shape[i] = ishape[i];
+      }
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+  
+      LOG(INFO) << "### param->begin: " << param->begin[0] << " " << param->begin[1] << " " << param->begin[2] << " " << param->begin[3];
+      LOG(INFO) << "### param->end: " << param->end[0] << " " << param->end[1] << " " << param->end[2] << " " << param->end[3];
+      LOG(INFO) << "### param->strides: " << param->strides[0] << " " << param->strides[1] << " " << param->strides[2] << " " << param->strides[3];
+      LOG(INFO) << "### common.input_shape: " << common.input_shape[0] << " " << common.input_shape[1] << " " << common.input_shape[2] << " " << common.input_shape[3];
+      LOG(INFO) << "### common.output_shape: " << common.output_shape[0] << " " << common.output_shape[1] << " " << common.output_shape[2] << " " << common.output_shape[3];
+
+
+      set_datatype(ittype, NULL, ottype, common.input_datatype, useless,
+                   common.output_datatype);
+
+      common.input_datatype = datatype_enum::RFLOAT;
+      common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      
+      if (iscale_[0] > 0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+      }
+      if (oscale_ > 0) {
+        common.oscale[0] = oscale_;
+        common.output_datatype = datatype_enum::RINT8;
+      }
+
+      LOG(INFO) << "### Strided_slice iscale_: " << iscale_[0] << ", input_datatype: " << common.input_datatype;
+      LOG(INFO) << "### Strided_slice oscale_: " << oscale_ << ", output_datatype: " << common.output_datatype;
+
+      auto it = expr_execute_order_.find(call->args[0]);
+      if (it != expr_execute_order_.end()) {
+        common.input_offset = it->second;
+      }
+      else {
+        // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+        common.input_offset = (size_t) - 1; // MAX value size_t can hold
+      } 
+      param->com_par = common;
+      // LOG(INFO) << "input " << param->input_offset << " weight NULL" << " output " << param->output_offset;
+      return riscv_code;
+    }
+
+    Riscv_code* Multiply(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::MULTIPLY);
+      Multiply_param *param = new Multiply_param(0);
+      riscv_code->data = (void *)param;
+      const TensorTypeNode *ittype[2], *wttype, *ottype;
+      std::vector<int> ishape[2], wshape, oshape;
+      int wstorage_id;
+      size_t input_offset[2];
+      Constant weight_const;
+      int index = 0;
+      for (auto arg : call->args) {
+        if (arg->IsInstance<CallNode>() || arg->IsInstance<VarNode>()) {
+          ittype[index] = arg->checked_type().as<TensorTypeNode>();
+          ishape[index] = GetShape(arg->checked_type());
+          auto it = expr_execute_order_.find(arg);
+          if (it != expr_execute_order_.end()) {
+            input_offset[index] = it->second;
+          }
+          else {
+            // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+            input_offset[index] = (size_t) - 1; // MAX value size_t can hold
+          }
+          index++;
+        }
+        else {
+          weight_const = Downcast<Constant>(arg);
+          wttype = arg->checked_type().as<TensorTypeNode>();
+          wshape = GetShape(arg->checked_type());
+          wstorage_id = storage_device_map_[arg][0][0];
+          param->multiply_type = 0;
+        }
+      }
+      LOG(INFO) << "### Multiply param->multiply_type: " << param->multiply_type;
+      LOG(INFO) << "### Multiply weight size: " << wshape.size();
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape[0].size(); i++) {
+        common.input_shape[i] = ishape[0][i];
+      }
+      common.input_offset = input_offset[0];      
+      if (param->multiply_type == 0) {
+        if (wshape.size() == 0) {
+          param->multiply_type = 0;
+        } else {
+          param->multiply_type = 1;
+        }
+
+        size_t weight_size = 1;
+        for (size_t i = 0; i < wshape.size(); i++) {
+          param->weight_shape[3-i] = wshape[i];
+          weight_size *= static_cast<size_t>(wshape[i]);
+        }
+
+        set_datatype(ittype[0], wttype, ottype, common.input_datatype, param->weight_datatype,
+                     common.output_datatype);
+
+        param->weight_size = weight_size * divRoundUp(wttype->dtype.bits() * wttype->dtype.lanes(), 8);
+        param->weights = (void*)(new char[param->weight_size]);
+        memcpy(param->weights, (void*)(weight_const->data->data), param->weight_size);        
+        if (param->weight_size != temporary_data_storage_[wstorage_id])
+          LOG(FATAL) << "weight size should be consistent";
+        param->weight_offset = weight_memory_used_;
+        weight_memory_used_ += temporary_data_storage_[wstorage_id];
+      } else {
+        for (size_t i = 0; i < ishape[1].size(); i++) {
+          param->weight_shape[i] = ishape[1][i];
+        }
+        param->weights = NULL;
+        param->weight_size = 0;
+        set_datatype(ittype[0], ittype[1], ottype, common.input_datatype, param->weight_datatype,
+                     common.output_datatype);
+
+        param->weight_offset = input_offset[1];
+      }
+
+      // if (iscale_[0] != 1.0) {
+      //   common.iscale[0] = iscale_[0];
+      //   common.input_datatype = datatype_enum::RINT8;
+      //   common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      //   LOG(INFO) << "### Multiply iscale_[0]: " << iscale_[0];
+      //   iscale_[0] = 1.0;
+      // } else {
+      //   LOG(INFO) << "### Multiply iscale_ None";
+      //   common.input_datatype = datatype_enum::RFLOAT;
+      //   common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      // }
+
+      // if (iscale_[0] != 1.0) { // Tensor+Tensor 第一个输入
+      //   LOG(INFO) << "### Multiply iscale_[0]: " << iscale_[0];
+      //   common.iscale[0] = iscale_[0];
+      //   common.input_datatype = datatype_enum::RINT8;
+      // } else {
+      //   common.input_datatype = datatype_enum::RFLOAT;
+      // }
+      // if (iscale_[1] != 1.0) { // Tensor+Tensor 第二个输入
+      //   LOG(INFO) << "### Multiply iscale_[0]: " << iscale_[1];
+      //   common.iscale[1] = iscale_[1];
+      //   param->weight_datatype = datatype_enum::RINT8;
+      // } else {
+      //   param->weight_datatype = datatype_enum::RFLOAT;
+      // }
+
+      // if (oscale_ != 1.0) { // 单输出
+      //   LOG(INFO) << "### Multiply oscale_: " << oscale_;
+      //   common.oscale[0] = oscale_;
+      //   common.output_datatype = datatype_enum::RINT8;
+      // } else {
+      //   common.output_datatype = datatype_enum::RFLOAT;
+      // }
+
+      common.input_datatype = datatype_enum::RFLOAT;
+      common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      
+      if (iscale_[0] > 0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+      }
+      if (oscale_ > 0) {
+        common.oscale[0] = oscale_;
+        common.output_datatype = datatype_enum::RINT8;
+      }
+
+      LOG(INFO) << "### Multiply iscale_: " << iscale_[0] << ", input_datatype: " << common.input_datatype;
+      LOG(INFO) << "### Multiply oscale_: " << oscale_ << ", output_datatype: " << common.output_datatype;
+
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      param->com_par = common;
+      // LOG(INFO) << "input " << param->input_offset << " weight " << param->weight_offset << " output " << param->output_offset;
+      // LOG(INFO) << "### Multiply ishape: " << common.input_shape[0] << " " << common.input_shape[1] << " " << common.input_shape[2] << " "<< common.input_shape[3];
+      // LOG(INFO) << "### Multiply weight_shape: " << param->weight_shape[0] << " " << param->weight_shape[1] << " " << param->weight_shape[2] << " "<< param->weight_shape[3];
+      // LOG(INFO) << "### Multiply oshape: " << oshape[0] << " " << oshape[1] << " " << oshape[2] << " "<< oshape[3];
+      // LOG(INFO) << "### Multiply param->multiply_type: " << param->multiply_type;
+      // LOG(INFO) << "### Multiply weight_shape size: " << wshape.size();
+      // LOG(INFO) << "### Multiply input_offset: " << common.input_offset;
+      // LOG(INFO) << "### Multiply weight_offset: " << param->weight_offset;
+      return riscv_code;
+    }
+
+    Riscv_code* Exp(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::EXP);
+      Exp_param *param = new Exp_param(0);
+      riscv_code->data = (void *)param;
+      datatype_enum useless;
+      const TensorTypeNode *ittype, *ottype;
+      std::vector<int> ishape, oshape;
+      ittype = call->args[0]->checked_type().as<TensorTypeNode>();
+      ishape = GetShape(call->args[0]->checked_type());
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape.size(); i++) {
+        common.input_shape[i] = ishape[i];
+      }
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      set_datatype(ittype, NULL, ottype, common.input_datatype, useless,
+                   common.output_datatype);
+
+      common.input_datatype = datatype_enum::RFLOAT;
+      common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+
+      if (iscale_[0] > 0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+      }
+      if (oscale_ > 0) {
+        common.oscale[0] = oscale_;
+        common.output_datatype = datatype_enum::RINT8;
+      }
+
+      LOG(INFO) << "### Exp iscale_: " << iscale_[0] << ", input_datatype: " << common.input_datatype;
+      LOG(INFO) << "### Exp oscale_: " << oscale_ << ", output_datatype: " << common.output_datatype;
+
+      auto it = expr_execute_order_.find(call->args[0]);
+      if (it != expr_execute_order_.end()) {
+        common.input_offset = it->second;
+      }
+      else {
+        // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+        common.input_offset = (size_t) - 1; // MAX value size_t can hold
+      }
+      param->com_par = common;
+      return riscv_code;
+    }
+
+    Riscv_code* Expand_dims(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::EXPAND_DIMS);
+      Expand_dims_param *param = new Expand_dims_param(0);
+      riscv_code->data = (void *)param;
+      const auto* expandDimsAttrs = call->attrs.as<ExpandDimsAttrs>();
+      param->axis = expandDimsAttrs->axis;
+      param->num_newaxis = expandDimsAttrs->num_newaxis;
+      datatype_enum useless;
+      const TensorTypeNode *ittype, *ottype;
+      std::vector<int> ishape, oshape;
+      ittype = call->args[0]->checked_type().as<TensorTypeNode>();
+      ishape = GetShape(call->args[0]->checked_type());
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape.size(); i++) {
+        common.input_shape[i] = ishape[i];
+      }
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      set_datatype(ittype, NULL, ottype, common.input_datatype, useless,
+                   common.output_datatype);
+
+      if (iscale_[0] != 1.0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+        LOG(INFO) << "### Exp iscale_[0]: " << iscale_[0];
+        iscale_[0] = 1.0;
+      } else {
+        LOG(INFO) << "### Exp iscale_ None";
+        common.input_datatype = datatype_enum::RFLOAT;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      }
+      LOG(INFO) << "### Exp input_shape: " << common.input_shape[0] << " " << common.input_shape[1] << " " << common.input_shape[2] << " " << common.input_shape[3];
+      LOG(INFO) << "### Exp output_shape: " << common.output_shape[0] << " " << common.output_shape[1] << " " << common.output_shape[2] << " " << common.output_shape[3];
+
+      auto it = expr_execute_order_.find(call->args[0]);
+      if (it != expr_execute_order_.end()) {
+        common.input_offset = it->second;
+      }
+      else {
+        // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+        common.input_offset = (size_t) - 1; // MAX value size_t can hold
+      }
+      param->com_par = common;
+      return riscv_code;
+    }
+
+    Riscv_code* Take(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::TAKE);
+      Take_param *param = new Take_param(0);
+      riscv_code->data = (void *)param;
+      const auto* takeAttrs = call->attrs.as<TakeAttrs>();
+      param->axis = takeAttrs->axis;
+      param->mode = takeAttrs->mode;
+      const TensorTypeNode *ittype[2], *wttype, *ottype;
+      std::vector<int> ishape[2], wshape, oshape;
+      int wstorage_id;
+      size_t input_offset[2];
+      Constant indices_const;
+      int index = 0;
+      for (auto arg : call->args) {
+        if (arg->IsInstance<CallNode>() || arg->IsInstance<VarNode>()) {
+          ittype[index] = arg->checked_type().as<TensorTypeNode>();
+          ishape[index] = GetShape(arg->checked_type());
+          auto it = expr_execute_order_.find(arg);
+          if (it != expr_execute_order_.end()) {
+            input_offset[index] = it->second;
+          }
+          else {
+            // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+            input_offset[index] = (size_t) - 1; // MAX value size_t can hold
+          }
+          index++;
+        }
+        else {
+          indices_const = Downcast<Constant>(arg);
+          wttype = arg->checked_type().as<TensorTypeNode>();
+          wshape = GetShape(arg->checked_type());
+          wstorage_id = storage_device_map_[arg][0][0];
+          param->indices_type = 1;
+        }
+      }
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape[0].size(); i++) {
+        common.input_shape[i] = ishape[0][i];
+      }
+      common.input_offset = input_offset[0];
+      if (param->indices_type) {
+        size_t indices_size = 1;
+        for (size_t i = 0; i < wshape.size(); i++) {
+          param->indices_shape[i] = wshape[i];
+          indices_size *= static_cast<size_t>(wshape[i]);
+        }
+        set_datatype(ittype[0], wttype, ottype, common.input_datatype, param->indices_datatype,
+                     common.output_datatype);
+
+        param->indices_size = indices_size * divRoundUp(wttype->dtype.bits() * wttype->dtype.lanes(), 8);
+        param->indices = (void*)(new char[param->indices_size]);
+        memcpy(param->indices, (void*)(indices_const->data->data), param->indices_size);
+        if (param->indices_size != temporary_data_storage_[wstorage_id])
+          LOG(FATAL) << "weight size should be consistent";
+        param->indices_offset = weight_memory_used_;
+        weight_memory_used_ += temporary_data_storage_[wstorage_id];
+      }
+      else {
+        for (size_t i = 0; i < ishape[1].size(); i++) {
+          param->indices_shape[i] = ishape[1][i];
+        }
+        param->indices = NULL;
+        param->indices_size = 0;
+        set_datatype(ittype[0], ittype[1], ottype, common.input_datatype, param->indices_datatype,
+                     common.output_datatype);
+        param->indices_offset = input_offset[1];
+      }
+
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      if (iscale_[0] != 1.0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+        LOG(INFO) << "### Add iscale_[0]: " << iscale_[0];
+        iscale_[0] = 1.0;
+      } else {
+        LOG(INFO) << "### Add iscale_ None";
+        common.input_datatype = datatype_enum::RFLOAT;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      }
+
+      param->com_par = common;
+      // LOG(INFO) << "input " << param->input_offset << " weight " << param->weight_offset << " output " << param->output_offset;
+      return riscv_code;
+    }
+
+    Riscv_code* One_hot(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::ONE_HOT);
+      One_hot_param *param = new One_hot_param(0);
+      riscv_code->data = (void *)param;
+      const auto* oneHotAttrs = call->attrs.as<OneHotAttrs>();
+      param->depth = oneHotAttrs->depth;
+      param->axis = oneHotAttrs->axis;
+      std::vector<int> ishape, oshape;
+      size_t input_offset;;
+      auto arg = call->args[0];
+      ishape = GetShape(arg->checked_type());
+      auto it = expr_execute_order_.find(arg);
+      if (it != expr_execute_order_.end()) {
+        input_offset = it->second;
+      }
+      else {
+        // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+        input_offset = (size_t) - 1; // MAX value size_t can hold
+      }
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape.size(); i++) {
+        common.input_shape[i] = ishape[i];
+      }
+      common.input_offset = input_offset;
+      Constant on_value = Downcast<Constant>(call->args[1]);
+      Constant off_value = Downcast<Constant>(call->args[2]);
+
+      // right now, we assume the on_value and off_value are constant
+      param->on_value = ((int *)(on_value->data->data))[0];
+      param->off_value = ((int *)(on_value->data->data))[0];
+
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      if (iscale_[0] != 1.0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+        LOG(INFO) << "### Add iscale_[0]: " << iscale_[0];
+        iscale_[0] = 1.0;
+      } else {
+        LOG(INFO) << "### Add iscale_ None";
+        common.input_datatype = datatype_enum::RFLOAT;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      }
+
+      param->com_par = common;
+      // LOG(INFO) << "input " << param->input_offset << " weight " << param->weight_offset << " output " << param->output_offset;
+      return riscv_code;
+    }
+
+    Riscv_code* Less(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::LESS);
+      Less_param *param = new Less_param(0);
+      riscv_code->data = (void *)param;
+      const TensorTypeNode *ittype[2], *wttype, *ottype;
+      std::vector<int> ishape[2], wshape, oshape;
+      int wstorage_id;
+      size_t input_offset[2];
+      Constant weight_const;
+      int index = 0;
+      for (auto arg : call->args) {
+        if (arg->IsInstance<CallNode>() || arg->IsInstance<VarNode>()) {
+          ittype[index] = arg->checked_type().as<TensorTypeNode>();
+          ishape[index] = GetShape(arg->checked_type());
+          auto it = expr_execute_order_.find(arg);
+          if (it != expr_execute_order_.end()) {
+            input_offset[index] = it->second;
+          }
+          else {
+            // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+            input_offset[index] = (size_t) - 1; // MAX value size_t can hold
+          }
+          index++;
+        }
+        else {
+          weight_const = Downcast<Constant>(arg);
+          wttype = arg->checked_type().as<TensorTypeNode>();
+          wshape = GetShape(arg->checked_type());
+          wstorage_id = storage_device_map_[arg][0][0];
+          param->less_type = true;
+        }
+      }
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape[0].size(); i++) {
+        common.input_shape[i] = ishape[0][i];
+      }
+      common.input_offset = input_offset[0];
+      if (param->less_type) {
+        size_t weight_size = 1;
+        for (size_t i = 0; i < wshape.size(); i++) {
+          param->weight_shape[i] = wshape[i];
+          weight_size *= static_cast<size_t>(wshape[i]);
+        }
+
+        set_datatype(ittype[0], wttype, ottype, common.input_datatype, param->weight_datatype,
+                     common.output_datatype);
+
+        param->weight_size = weight_size * divRoundUp(wttype->dtype.bits() * wttype->dtype.lanes(), 8);
+        param->weights = (void*)(new char[param->weight_size]);
+        memcpy(param->weights, (void*)(weight_const->data->data), param->weight_size);
+        if (param->weight_size != temporary_data_storage_[wstorage_id])
+          LOG(FATAL) << "weight size should be consistent";
+        param->weight_offset = weight_memory_used_;
+        weight_memory_used_ += temporary_data_storage_[wstorage_id];
+      }
+      else {
+        for (size_t i = 0; i < ishape[1].size(); i++) {
+          param->weight_shape[i] = ishape[1][i];
+        }
+        param->weights = NULL;
+        param->weight_size = 0;
+        set_datatype(ittype[0], ittype[1], ottype, common.input_datatype, param->weight_datatype,
+                     common.output_datatype);
+        param->weight_offset = input_offset[1];
+      }
+
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      if (iscale_[0] != 1.0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+        LOG(INFO) << "### Add iscale_[0]: " << iscale_[0];
+        iscale_[0] = 1.0;
+      } else {
+        LOG(INFO) << "### Add iscale_ None";
+        common.input_datatype = datatype_enum::RFLOAT;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      }
+
+      param->com_par = common;
+      // LOG(INFO) << "input " << param->input_offset << " weight " << param->weight_offset << " output " << param->output_offset;
+      return riscv_code;
+    }
+
+    Riscv_code* Batch_matmul(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::BATCH_MATMUL);
+      Batch_matmul_param *param = new Batch_matmul_param(0);
+      riscv_code->data = (void *)param;
+      const TensorTypeNode *ittype[2], *wttype, *ottype;
+      std::vector<int> ishape[2], wshape, oshape;
+      int wstorage_id;
+      size_t input_offset[2];
+      Constant weight_const;
+      int index = 0;
+      for (auto arg : call->args) {
+        if (arg->IsInstance<CallNode>() || arg->IsInstance<VarNode>()) {
+          ittype[index] = arg->checked_type().as<TensorTypeNode>();
+          ishape[index] = GetShape(arg->checked_type());
+          auto it = expr_execute_order_.find(arg);
+          if (it != expr_execute_order_.end()) {
+            input_offset[index] = it->second;
+          }
+          else {
+            // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+            input_offset[index] = (size_t) - 1; // MAX value size_t can hold
+          }
+          index++;
+        }
+        else {
+          weight_const = Downcast<Constant>(arg);
+          wttype = arg->checked_type().as<TensorTypeNode>();
+          wshape = GetShape(arg->checked_type());
+          wstorage_id = storage_device_map_[arg][0][0];
+          param->weight_type = true;
+        }
+      }
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape[0].size(); i++) {
+        common.input_shape[i] = ishape[0][i];
+      }
+      common.input_offset = input_offset[0];
+      if (param->weight_type) {
+        size_t weight_size = 1;
+        for (size_t i = 0; i < wshape.size(); i++) {
+          param->weight_shape[i] = wshape[i];
+          weight_size *= static_cast<size_t>(wshape[i]);
+        }
+
+        set_datatype(ittype[0], wttype, ottype, common.input_datatype, param->weight_datatype,
+                     common.output_datatype);
+
+        param->weight_size = weight_size * divRoundUp(wttype->dtype.bits() * wttype->dtype.lanes(), 8);
+        param->weights = (void*)(new char[param->weight_size]);
+        memcpy(param->weights, (void*)(weight_const->data->data), param->weight_size);
+        if (param->weight_size != temporary_data_storage_[wstorage_id])
+          LOG(FATAL) << "weight size should be consistent";
+        param->weight_offset = weight_memory_used_;
+        weight_memory_used_ += temporary_data_storage_[wstorage_id];
+      }
+      else {
+        for (size_t i = 0; i < ishape[1].size(); i++) {
+          param->weight_shape[i] = ishape[1][i];
+        }
+        param->weights = NULL;
+        param->weight_size = 0;
+        set_datatype(ittype[0], ittype[1], ottype, common.input_datatype, param->weight_datatype,
+                     common.output_datatype);
+        param->weight_offset = input_offset[1];
+      }
+
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      if (iscale_[0] != 1.0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+        LOG(INFO) << "### Add iscale_[0]: " << iscale_[0];
+        iscale_[0] = 1.0;
+      } else {
+        LOG(INFO) << "### Add iscale_ None";
+        common.input_datatype = datatype_enum::RFLOAT;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      }
+
+      param->com_par = common;
+      // LOG(INFO) << "input " << param->input_offset << " weight " << param->weight_offset << " output " << param->output_offset;
+      return riscv_code;
+    }
+
+    Riscv_code* Transpose(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::TRANSPOSE);
+      Transpose_param *param = new Transpose_param(0);
+      riscv_code->data = (void *)param;
+      const auto* transposeAttrs = call->attrs.as<TransposeAttrs>();
+      for (size_t i = 0; i < transposeAttrs->axes.size(); i++)
+        param->axes.push_back(transposeAttrs->axes[i]);
+      datatype_enum useless;
+      const TensorTypeNode *ittype, *ottype;
+      std::vector<int> ishape, oshape;
+      ittype = call->args[0]->checked_type().as<TensorTypeNode>();
+      ishape = GetShape(call->args[0]->checked_type());
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape.size(); i++) {
+        common.input_shape[i] = ishape[i];
+      }
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      set_datatype(ittype, NULL, ottype, common.input_datatype, useless,
+                   common.output_datatype);
+
+      if (iscale_[0] != 1.0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+        LOG(INFO) << "### Exp iscale_[0]: " << iscale_[0];
+        iscale_[0] = 1.0;
+      } else {
+        LOG(INFO) << "### Exp iscale_ None";
+        common.input_datatype = datatype_enum::RFLOAT;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      }
+
+      auto it = expr_execute_order_.find(call->args[0]);
+      if (it != expr_execute_order_.end()) {
+        common.input_offset = it->second;
+      }
+      else {
+        // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+        common.input_offset = (size_t) - 1; // MAX value size_t can hold
+      }
+      param->com_par = common;
+      return riscv_code;
+    }
+
+    Riscv_code* Cast(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::CAST);
+      Cast_param *param = new Cast_param(0);
+      riscv_code->data = (void *)param;
+      const auto* castAttrs = call->attrs.as<CastAttrs>();
+      if (castAttrs->dtype.is_int())
+        param->dtype = datatype_enum::RINT;
+      else if (castAttrs->dtype.is_uint())
+        param->dtype = datatype_enum::RUINT;
+      else if (castAttrs->dtype.is_float())
+        param->dtype = datatype_enum::RFLOAT;
+      else if (castAttrs->dtype.is_bfloat16())
+        param->dtype = datatype_enum::RBFLOAT;
+      else
+        param->dtype = datatype_enum::RINT8;
+      std::vector<int> ishape, oshape;
+      ishape = GetShape(call->args[0]->checked_type());
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape.size(); i++) {
+        common.input_shape[i] = ishape[i];
+      }
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      if (iscale_[0] != 1.0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+        LOG(INFO) << "### Exp iscale_[0]: " << iscale_[0];
+        iscale_[0] = 1.0;
+      } else {
+        LOG(INFO) << "### Exp iscale_ None";
+        common.input_datatype = datatype_enum::RFLOAT;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      }
+
+      auto it = expr_execute_order_.find(call->args[0]);
+      if (it != expr_execute_order_.end()) {
+        common.input_offset = it->second;
+      }
+      else {
+        // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+        common.input_offset = (size_t) - 1; // MAX value size_t can hold
+      }
+      param->com_par = common;
+      return riscv_code;
+    }
+
+    Riscv_code* Subtract(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::SUBTRACT);
+      Subtract_param *param = new Subtract_param(0);
+      riscv_code->data = (void *)param;
+      const TensorTypeNode *ittype[2], *wttype, *ottype;
+      std::vector<int> ishape[2], wshape, oshape;
+      int wstorage_id;
+      size_t input_offset[2];
+      Constant weight_const;
+      int index = 0;
+      for (auto arg : call->args) {
+        if (arg->IsInstance<CallNode>() || arg->IsInstance<VarNode>()) {
+          ittype[index] = arg->checked_type().as<TensorTypeNode>();
+          ishape[index] = GetShape(arg->checked_type());
+          auto it = expr_execute_order_.find(arg);
+          if (it != expr_execute_order_.end()) {
+            input_offset[index] = it->second;
+          }
+          else {
+            // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+            input_offset[index] = (size_t) - 1; // MAX value size_t can hold
+          }
+          index++;
+        }
+        else {
+          weight_const = Downcast<Constant>(arg);
+          wttype = arg->checked_type().as<TensorTypeNode>();
+          wshape = GetShape(arg->checked_type());
+          wstorage_id = storage_device_map_[arg][0][0];
+          param->subtract_type = true;
+        }
+      }
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape[0].size(); i++) {
+        common.input_shape[i] = ishape[0][i];
+      }
+      common.input_offset = input_offset[0];
+      if (param->subtract_type) {
+        size_t weight_size = 1;
+        for (size_t i = 0; i < wshape.size(); i++) {
+          param->weight_shape[i] = wshape[i];
+          weight_size *= static_cast<size_t>(wshape[i]);
+        }
+
+        set_datatype(ittype[0], wttype, ottype, common.input_datatype, param->weight_datatype,
+                     common.output_datatype);
+
+        param->weight_size = weight_size * divRoundUp(wttype->dtype.bits() * wttype->dtype.lanes(), 8);
+        param->weights = (void*)(new char[param->weight_size]);
+        memcpy(param->weights, (void*)(weight_const->data->data), param->weight_size);
+        if (param->weight_size != temporary_data_storage_[wstorage_id])
+          LOG(FATAL) << "weight size should be consistent";
+        param->weight_offset = weight_memory_used_;
+        weight_memory_used_ += temporary_data_storage_[wstorage_id];
+      }
+      else {
+        for (size_t i = 0; i < ishape[1].size(); i++) {
+          param->weight_shape[i] = ishape[1][i];
+        }
+        param->weights = NULL;
+        param->weight_size = 0;
+        set_datatype(ittype[0], ittype[1], ottype, common.input_datatype, param->weight_datatype,
+                     common.output_datatype);
+        param->weight_offset = input_offset[1];
+      }
+
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      if (iscale_[0] != 1.0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+        LOG(INFO) << "### Subtract iscale_[0]: " << iscale_[0];
+        iscale_[0] = 1.0;
+      } else {
+        LOG(INFO) << "### Subtract iscale_ None";
+        common.input_datatype = datatype_enum::RFLOAT;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      }    
+      param->com_par = common;
+      
+      return riscv_code;
+    }
+
+    //yuanyue 20220512
+    Riscv_code* Power(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::POWER);
+      Power_param *param = new Power_param(0);
+      riscv_code->data = (void *)param;
+      const TensorTypeNode *ittype[2], *wttype, *ottype;
+      std::vector<int> ishape[2], wshape, oshape;
+      int wstorage_id;
+      size_t input_offset[2];
+      Constant weight_const;
+      int index = 0;
+      for (auto arg : call->args) {
+        if (arg->IsInstance<CallNode>() || arg->IsInstance<VarNode>()) {
+          ittype[index] = arg->checked_type().as<TensorTypeNode>();
+          ishape[index] = GetShape(arg->checked_type());
+          auto it = expr_execute_order_.find(arg);
+          if (it != expr_execute_order_.end()) {
+            input_offset[index] = it->second;
+          }
+          else {
+            // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+            input_offset[index] = (size_t) - 1; // MAX value size_t can hold
+          }
+          index++;
+        }
+        else {
+          weight_const = Downcast<Constant>(arg);
+          wttype = arg->checked_type().as<TensorTypeNode>();
+          wshape = GetShape(arg->checked_type());
+          wstorage_id = storage_device_map_[arg][0][0];
+          param->power_type = 1;
+        }
+      }
+      LOG(INFO) << "### Power param->power_type: " << param->power_type;
+      LOG(INFO) << "### Power weight size: " << wshape.size();
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape[0].size(); i++) {
+        common.input_shape[i] = ishape[0][i];
+      }
+      common.input_offset = input_offset[0];      
+      if (param->power_type == 1) {
+        
+        size_t weight_size = 1;
+        for (size_t i = 0; i < wshape.size(); i++) {
+          param->weight_shape[i] = wshape[i];
+          weight_size *= static_cast<size_t>(wshape[i]);
+        }
+
+        set_datatype(ittype[0], wttype, ottype, common.input_datatype, param->weight_datatype,
+                     common.output_datatype);
+
+        param->weight_size = weight_size * divRoundUp(wttype->dtype.bits() * wttype->dtype.lanes(), 8);
+        param->weights = (void*)(new char[param->weight_size]);
+        memcpy(param->weights, (void*)(weight_const->data->data), param->weight_size);        
+        if (param->weight_size != temporary_data_storage_[wstorage_id])
+          LOG(FATAL) << "weight size should be consistent";
+        param->weight_offset = weight_memory_used_;
+        weight_memory_used_ += temporary_data_storage_[wstorage_id];
+      } else {
+        for (size_t i = 0; i < ishape[1].size(); i++) {
+          param->weight_shape[i] = ishape[1][i];
+        }
+        param->weights = NULL;
+        param->weight_size = 0;
+        set_datatype(ittype[0], ittype[1], ottype, common.input_datatype, param->weight_datatype,
+                     common.output_datatype);
+
+        param->weight_offset = input_offset[1];
+      }
+
+      if (iscale_[0] != 1.0) { // 单输入
+        LOG(INFO) << "### Power iscale_[0]: " << iscale_[0];
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+      } else {
+        common.input_datatype = datatype_enum::RFLOAT;
+      }
+
+      if (oscale_ != 1.0) { // 单输出
+        LOG(INFO) << "### Power oscale_: " << oscale_;
+        common.oscale[0] = oscale_;
+        common.output_datatype = datatype_enum::RINT8;
+      } else {
+        common.output_datatype = datatype_enum::RFLOAT;
+      }
+
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      param->com_par = common;
+      
+      return riscv_code;
+    }
+
+    //yuanyue 20220512
+    Riscv_code* Divide(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::DIVIDE);
+      Divide_param *param = new Divide_param(0);
+      riscv_code->data = (void *)param;
+      const TensorTypeNode *ittype[2], *wttype, *ottype;
+      std::vector<int> ishape[2], wshape, oshape;
+      int wstorage_id;
+      size_t input_offset[2];
+      Constant weight_const;
+      int index = 0;
+      for (auto arg : call->args) {
+        if (arg->IsInstance<CallNode>() || arg->IsInstance<VarNode>()) {
+          ittype[index] = arg->checked_type().as<TensorTypeNode>();
+          ishape[index] = GetShape(arg->checked_type());
+          auto it = expr_execute_order_.find(arg);
+          if (it != expr_execute_order_.end()) {
+            input_offset[index] = it->second;
+          }
+          else {
+            // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+            input_offset[index] = (size_t) - 1; // MAX value size_t can hold
+          }
+          index++;
+        }
+        else {
+          weight_const = Downcast<Constant>(arg);
+          wttype = arg->checked_type().as<TensorTypeNode>();
+          wshape = GetShape(arg->checked_type());
+          wstorage_id = storage_device_map_[arg][0][0];
+          param->divide_type = 1;
+        }
+      }
+      LOG(INFO) << "### Divide param->divide_type: " << param->divide_type;
+      LOG(INFO) << "### Divide weight size: " << wshape.size();
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape[0].size(); i++) {
+        common.input_shape[i] = ishape[0][i];
+      }
+      common.input_offset = input_offset[0];      
+      if (param->divide_type == 1) {
+
+        size_t weight_size = 1;
+        for (size_t i = 0; i < wshape.size(); i++) {
+          param->weight_shape[i] = wshape[i];
+          weight_size *= static_cast<size_t>(wshape[i]);
+        }
+
+        set_datatype(ittype[0], wttype, ottype, common.input_datatype, param->weight_datatype,
+                     common.output_datatype);
+
+        param->weight_size = weight_size * divRoundUp(wttype->dtype.bits() * wttype->dtype.lanes(), 8);
+        param->weights = (void*)(new char[param->weight_size]);
+        memcpy(param->weights, (void*)(weight_const->data->data), param->weight_size);        
+        if (param->weight_size != temporary_data_storage_[wstorage_id])
+          LOG(FATAL) << "weight size should be consistent";
+        param->weight_offset = weight_memory_used_;
+        weight_memory_used_ += temporary_data_storage_[wstorage_id];
+      } else {
+        for (size_t i = 0; i < ishape[1].size(); i++) {
+          param->weight_shape[i] = ishape[1][i];
+        }
+        param->weights = NULL;
+        param->weight_size = 0;
+        set_datatype(ittype[0], ittype[1], ottype, common.input_datatype, param->weight_datatype,
+                     common.output_datatype);
+
+        param->weight_offset = input_offset[1];
+      }
+
+      if (iscale_[0] != 1.0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+        LOG(INFO) << "### Divide iscale_[0]: " << iscale_[0];
+        iscale_[0] = 1.0;
+      } else {
+        LOG(INFO) << "### Divide iscale_ None";
+        common.input_datatype = datatype_enum::RFLOAT;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      }
+
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      param->com_par = common;
+
+      return riscv_code;
+    }
+
+    //yuanyue 20220512
+    Riscv_code* Max(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::MAX);
+      Max_param *param = new Max_param(0);
+      riscv_code->data = (void *)param;
+      const TensorTypeNode *ittype[2], *wttype, *ottype;
+      std::vector<int> ishape[2], wshape, oshape;
+      int wstorage_id;
+      size_t input_offset[2];
+      Constant weight_const;
+      int index = 0;
+      for (auto arg : call->args) {
+        if (arg->IsInstance<CallNode>() || arg->IsInstance<VarNode>()) {
+          ittype[index] = arg->checked_type().as<TensorTypeNode>();
+          ishape[index] = GetShape(arg->checked_type());
+          auto it = expr_execute_order_.find(arg);
+          if (it != expr_execute_order_.end()) {
+            input_offset[index] = it->second;
+          }
+          else {
+            // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+            input_offset[index] = (size_t) - 1; // MAX value size_t can hold
+          }
+          index++;
+        }
+        else {
+          weight_const = Downcast<Constant>(arg);
+          wttype = arg->checked_type().as<TensorTypeNode>();
+          wshape = GetShape(arg->checked_type());
+          wstorage_id = storage_device_map_[arg][0][0];
+          param->max_type = 1;
+        }
+      }
+      
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape[0].size(); i++) {
+        common.input_shape[i] = ishape[0][i];
+      }
+      common.input_offset = input_offset[0];      
+      if (param->max_type == 1) {
+        
+        size_t weight_size = 1;
+        for (size_t i = 0; i < wshape.size(); i++) {
+          param->weight_shape[i] = wshape[i];
+          weight_size *= static_cast<size_t>(wshape[i]);
+        }
+
+        set_datatype(ittype[0], wttype, ottype, common.input_datatype, param->weight_datatype,
+                     common.output_datatype);
+
+        param->weight_size = weight_size * divRoundUp(wttype->dtype.bits() * wttype->dtype.lanes(), 8);
+        param->weights = (void*)(new char[param->weight_size]);
+        memcpy(param->weights, (void*)(weight_const->data->data), param->weight_size);        
+        if (param->weight_size != temporary_data_storage_[wstorage_id])
+          LOG(FATAL) << "weight size should be consistent";
+        param->weight_offset = weight_memory_used_;
+        weight_memory_used_ += temporary_data_storage_[wstorage_id];
+      } else {
+        for (size_t i = 0; i < ishape[1].size(); i++) {
+          param->weight_shape[i] = ishape[1][i];
+        }
+        param->weights = NULL;
+        param->weight_size = 0;
+        set_datatype(ittype[0], ittype[1], ottype, common.input_datatype, param->weight_datatype,
+                     common.output_datatype);
+
+        param->weight_offset = input_offset[1];
+      }
+
+      if (iscale_[0] != 1.0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+        LOG(INFO) << "### max iscale_[0]: " << iscale_[0];
+        iscale_[0] = 1.0;
+      } else {
+        LOG(INFO) << "### max iscale_ None";
+        common.input_datatype = datatype_enum::RFLOAT;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      }
+
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      param->com_par = common;
+      
+      return riscv_code;
+    }
+
+    //yuanyue 20220512
+    Riscv_code* Sqrt(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::SQRT);
+      Sqrt_param *param = new Sqrt_param(0);
+      riscv_code->data = (void *)param;
+      datatype_enum useless;
+      const TensorTypeNode *ittype, *ottype;
+      std::vector<int> ishape, oshape;
+      ittype = call->args[0]->checked_type().as<TensorTypeNode>();
+      ishape = GetShape(call->args[0]->checked_type());
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape.size(); i++) {
+        common.input_shape[i] = ishape[i];
+      }
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      set_datatype(ittype, NULL, ottype, common.input_datatype, useless,
+                   common.output_datatype);
+
+      if (iscale_[0] != 1.0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+        LOG(INFO) << "### Sqrt iscale_[0]: " << iscale_[0];
+        iscale_[0] = 1.0;
+      } else {
+        LOG(INFO) << "### Sqrt iscale_ None";
+        common.input_datatype = datatype_enum::RFLOAT;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      }
+      LOG(INFO) << "### Sqrt input_shape: " << common.input_shape[0] << " " << common.input_shape[1] << " " << common.input_shape[2] << " " << common.input_shape[3];
+      LOG(INFO) << "### Sqrt output_shape: " << common.output_shape[0] << " " << common.output_shape[1] << " " << common.output_shape[2] << " " << common.output_shape[3];
+
+      auto it = expr_execute_order_.find(call->args[0]);
+      if (it != expr_execute_order_.end()) {
+        common.input_offset = it->second;
+      }
+      else {
+        // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+        common.input_offset = (size_t) - 1; // MAX value size_t can hold
+      }
+      param->com_par = common;
+      return riscv_code;
+    }
+
+    //yuanyue 20220512
+    Riscv_code* Erf(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::ERF);
+      Erf_param *param = new Erf_param(0);
+      riscv_code->data = (void *)param;
+      datatype_enum useless;
+      const TensorTypeNode *ittype, *ottype;
+      std::vector<int> ishape, oshape;
+      ittype = call->args[0]->checked_type().as<TensorTypeNode>();
+      ishape = GetShape(call->args[0]->checked_type());
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape.size(); i++) {
+        common.input_shape[i] = ishape[i];
+      }
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      set_datatype(ittype, NULL, ottype, common.input_datatype, useless,
+                   common.output_datatype);
+
+      if (iscale_[0] != 1.0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+        LOG(INFO) << "### Erf iscale_[0]: " << iscale_[0];
+        iscale_[0] = 1.0;
+      } else {
+        LOG(INFO) << "### Erf iscale_ None";
+        common.input_datatype = datatype_enum::RFLOAT;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      }
+      
+      auto it = expr_execute_order_.find(call->args[0]);
+      if (it != expr_execute_order_.end()) {
+        common.input_offset = it->second;
+      }
+      else {
+        // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+        common.input_offset = (size_t) - 1; // MAX value size_t can hold
+      }
+      param->com_par = common;
+      return riscv_code;
+    }
+
+    //yuanyue 20220512
+    Riscv_code* Tanh(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::TANH);
+      Tanh_param *param = new Tanh_param(0);
+      riscv_code->data = (void *)param;
+      datatype_enum useless;
+      const TensorTypeNode *ittype, *ottype;
+      std::vector<int> ishape, oshape;
+      ittype = call->args[0]->checked_type().as<TensorTypeNode>();
+      ishape = GetShape(call->args[0]->checked_type());
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape.size(); i++) {
+        common.input_shape[i] = ishape[i];
+      }
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      set_datatype(ittype, NULL, ottype, common.input_datatype, useless,
+                   common.output_datatype);
+
+      if (iscale_[0] != 1.0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+        LOG(INFO) << "### Sqrt iscale_[0]: " << iscale_[0];
+        iscale_[0] = 1.0;
+      } else {
+        LOG(INFO) << "### Sqrt iscale_ None";
+        common.input_datatype = datatype_enum::RFLOAT;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      }
+      LOG(INFO) << "### Sqrt input_shape: " << common.input_shape[0] << " " << common.input_shape[1] << " " << common.input_shape[2] << " " << common.input_shape[3];
+      LOG(INFO) << "### Sqrt output_shape: " << common.output_shape[0] << " " << common.output_shape[1] << " " << common.output_shape[2] << " " << common.output_shape[3];
+
+      auto it = expr_execute_order_.find(call->args[0]);
+      if (it != expr_execute_order_.end()) {
+        common.input_offset = it->second;
+      }
+      else {
+        // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+        common.input_offset = (size_t) - 1; // MAX value size_t can hold
+      }
+      param->com_par = common;
+      return riscv_code;
+    }
+
+    Riscv_code* Sum(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::SUM);
+      Sum_param *param = new Sum_param(0);
+      riscv_code->data = (void *)param;
+      const auto* reduceAttrs = call->attrs.as<ReduceAttrs>();
+
+      if (!reduceAttrs->axis.empty()) {
+        Array<Integer> axis = reduceAttrs->axis;
+        for (auto it : axis) {
+          param->axis.push_back(it.as<IntImmNode>()->value);
+        }
+      }
+
+      param->exclude=reduceAttrs->exclude;
+      param->keepdims=reduceAttrs->keepdims;
+            
+      datatype_enum useless;
+      const TensorTypeNode *ittype, *ottype;
+      std::vector<int> ishape, oshape;
+      ittype = call->args[0]->checked_type().as<TensorTypeNode>();
+      ishape = GetShape(call->args[0]->checked_type());
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape.size(); i++) {
+        common.input_shape[i] = ishape[i];
+      }
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      set_datatype(ittype, NULL, ottype, common.input_datatype, useless,
+                   common.output_datatype);
+
+      if (iscale_[0] != 1.0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+        LOG(INFO) << "### Sum iscale_[0]: " << iscale_[0];
+        iscale_[0] = 1.0;
+      } else {
+        LOG(INFO) << "### Sum iscale_ None";
+        common.input_datatype = datatype_enum::RFLOAT;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      }
+
+      auto it = expr_execute_order_.find(call->args[0]);
+      if (it != expr_execute_order_.end()) {
+        common.input_offset = it->second;
+      }
+      else {
+        // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+        common.input_offset = (size_t) - 1; // MAX value size_t can hold
+      } 
+      param->com_par = common;
+      // LOG(INFO) << "input " << param->input_offset << " weight NULL" << " output " << param->output_offset;
+      return riscv_code;
+    }
+
+    //yuanyue 20220512
+    Riscv_code* Split(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::SPLIT);
+      Split_param *param = new Split_param(0);
+      riscv_code->data = (void *)param;
+      
+      
+      const auto* SplitAttrs = call->attrs.as<tvm::relay::SplitAttrs>();
+      param->axis=SplitAttrs->axis;
+
+      if (SplitAttrs->indices_or_sections->IsInstance<ConstantNode>()){
+        LOG(INFO)<<"indices_or_sections AS ConstantNode";
+        Constant splitconst = Downcast<Constant>(SplitAttrs->indices_or_sections);
+
+        auto dtype = DataType(splitconst->data->dtype);
+        LOG(INFO)<<"splitconst->data->dtype" << dtype;
+
+        if (splitconst->is_scalar()){
+          param->indices_or_sections.push_back(*((int*)splitconst->data->data));
+        }
+        else{
+          auto wshape=GetShape(splitconst->checked_type());  ///wshape.size()=1
+          LOG(INFO)<<"wshape.size()" << wshape.size();
+          int weightsize = wshape[0];
+          int * weightdata = (int*)malloc(weightsize*sizeof(int));
+          memcpy(weightdata,(int*)(splitconst->data->data),weightsize*sizeof(int));
+
+          for (int i=0; i<wshape[0];i++)
+          {
+            param->indices_or_sections.push_back(weightdata[i]);
+          }      
+        }
+      }
+      else if (SplitAttrs->indices_or_sections->IsInstance<IntImmNode>()){
+        LOG(INFO)<<"indices_or_sections AS IntImmNode";
+        param->indices_or_sections.push_back(SplitAttrs->indices_or_sections.as<IntImmNode>()->value);
+      }
+      else if (SplitAttrs->indices_or_sections->IsInstance<TupleNode>()){
+        LOG(INFO)<<"indices_or_sections AS TupleNode";
+        auto tuple_node = SplitAttrs->indices_or_sections.as<TupleNode>();
+        for (const auto& field: tuple_node->fields){
+          param->indices_or_sections.push_back(field.as<IntImmNode>()->value);
+        }
+        //LOG(FATAL) << "AIPU RISCV Split(TupleNode) doesn't support: " << SplitAttrs->indices_or_sections->GetTypeKey();
+        
+      }
+      else {
+          LOG(FATAL) << "AIPU RISCV Split doesn't support: " << SplitAttrs->indices_or_sections->GetTypeKey();
+      }
+
+           
+      datatype_enum useless;
+      const TensorTypeNode *ittype, *ottype;
+      std::vector<int> ishape, oshape;
+      ittype = call->args[0]->checked_type().as<TensorTypeNode>();
+      ishape = GetShape(call->args[0]->checked_type());
+
+      if (call->checked_type().as<TensorTypeNode>())
+      {
+        ottype = call->checked_type().as<TensorTypeNode>();
+        oshape = GetShape(call->checked_type());
+      }
+      else if (call->checked_type().as<TupleTypeNode>())
+      {
+        auto type_node = call->checked_type().as<TupleTypeNode>();
+        bool flag_first=true;
+        for (auto field : type_node->fields) {
+          ICHECK(field->IsInstance<TensorTypeNode>());
+          if (flag_first){
+          ottype = field.as<TensorTypeNode>();
+          oshape = GetShape(field);
+          flag_first=false;
+          }
+          else{
+            auto other_oshape = GetShape(field);
+            param->other_output_shape.push_back(other_oshape);
+          }
+        }
+      }
+      else{
+        LOG(FATAL) << "AIPU RISCV Split(oshape) doesn't support: " << call->checked_type()->GetTypeKey();
+      }
+
+    
+      Common_param common;
+      for (size_t i = 0; i < ishape.size(); i++) {
+        common.input_shape[i] = ishape[i];
+      }
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      set_datatype(ittype, NULL, ottype, common.input_datatype, useless,
+                   common.output_datatype);
+
+      if (iscale_[0] != 1.0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+        LOG(INFO) << "### Split iscale_[0]: " << iscale_[0];
+        iscale_[0] = 1.0;
+      } else {
+        LOG(INFO) << "### Split iscale_ None";
+        common.input_datatype = datatype_enum::RFLOAT;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      }
+
+      auto it = expr_execute_order_.find(call->args[0]);
+      if (it != expr_execute_order_.end()) {
+        common.input_offset = it->second;
+      }
+      else {
+        // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+        common.input_offset = (size_t) - 1; // MAX value size_t can hold
+      } 
+      param->com_par = common;
+      // LOG(INFO) << "input " << param->input_offset << " weight NULL" << " output " << param->output_offset;
+      return riscv_code;
+    }
+
+    Riscv_code* Mean(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::MEAN);
+      Mean_param *param = new Mean_param(0);
+      riscv_code->data = (void *)param;
+      const auto* reduceAttrs = call->attrs.as<tvm::relay::ReduceAttrs>();
+      param->keepdims = reduceAttrs->keepdims;
+      param->exclude = reduceAttrs->exclude;
+      for (size_t i = 0; i < reduceAttrs->axis.size(); i++)
+	param->axis.push_back(reduceAttrs->axis[i]);
+      datatype_enum useless;
+      const TensorTypeNode *ittype, *ottype;
+      std::vector<int> ishape, oshape;
+      ittype = call->args[0]->checked_type().as<TensorTypeNode>();
+      ishape = GetShape(call->args[0]->checked_type());
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape.size(); i++) {
+        common.input_shape[i] = ishape[i];
+      }
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      set_datatype(ittype, NULL, ottype, common.input_datatype, useless,
+                   common.output_datatype);
+
+      common.input_datatype = datatype_enum::RFLOAT;
+      common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+
+      // iscale_[0] = 0.0728063;
+      // oscale_ = 0.321865;
+
+      if (iscale_[0] > 0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+      }
+      if (oscale_ > 0) {
+        common.oscale[0] = oscale_;
+        common.output_datatype = datatype_enum::RINT8;
+      }
+
+      LOG(INFO) << "### Mean iscale_: " << iscale_[0] << ", input_datatype: " << common.input_datatype;
+      LOG(INFO) << "### Mean oscale_: " << oscale_ << ", output_datatype: " << common.output_datatype;
+
+      auto it = expr_execute_order_.find(call->args[0]);
+      if (it != expr_execute_order_.end()) {
+        common.input_offset = it->second;
+      }
+      else {
+        // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+        common.input_offset = (size_t) - 1; // MAX value size_t can hold
+      }
+      param->com_par = common;
+      return riscv_code;
+    }
+
+    Riscv_code* Squeeze(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::SQUEEZE);
+      Squeeze_param *param = new Squeeze_param(0);
+      riscv_code->data = (void *)param;
+      const auto* squeezeAttrs = call->attrs.as<tvm::relay::SqueezeAttrs>();
+      for (size_t i = 0; i < squeezeAttrs->axis.size(); i++)
+      param->axis.push_back(squeezeAttrs->axis[i]);
+      datatype_enum useless;
+      const TensorTypeNode *ittype, *ottype;
+      std::vector<int> ishape, oshape;
+      ittype = call->args[0]->checked_type().as<TensorTypeNode>();
+      ishape = GetShape(call->args[0]->checked_type());
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape.size(); i++) {
+        common.input_shape[i] = ishape[i];
+      }
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      set_datatype(ittype, NULL, ottype, common.input_datatype, useless,
+                   common.output_datatype);
+
+
+      common.input_datatype = datatype_enum::RFLOAT;
+      common.output_datatype = datatype_enum::RFLOAT;  
+      // iscale_[0] = 0.144453;
+      // oscale_ = 0.144453;
+      if (iscale_[0] > 0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+      }
+      if (oscale_ > 0) {
+        common.oscale[0] = oscale_;
+        common.output_datatype = datatype_enum::RINT8;
+      }
+
+      LOG(INFO) << "### Squeeze iscale_: " << iscale_[0] << ", input_datatype: " << common.input_datatype;
+      LOG(INFO) << "### Squeeze oscale_: " << oscale_ << ", output_datatype: " << common.output_datatype;
+      auto it = expr_execute_order_.find(call->args[0]);
+      if (it != expr_execute_order_.end()) {
+        common.input_offset = it->second;
+      }
+      else {
+        // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+        common.input_offset = (size_t) - 1; // MAX value size_t can hold
+      }
+      param->com_par = common;
+      return riscv_code;
+    }
+
+    Riscv_code* Pad(const CallNode* call) {
+      Riscv_code *riscv_code = new Riscv_code(operator_enum::PAD);
+      Pad_param *param = new Pad_param(0);
+      riscv_code->data = (void *)param;
+      const auto* padAttrs = call->attrs.as<tvm::relay::PadAttrs>();
+      for (size_t i = 0; i < padAttrs->pad_width.size(); i++) {
+	std::vector<int> tmp;
+	for (size_t j = 0; j < padAttrs->pad_width[i].size(); j++)
+	  tmp.push_back(padAttrs->pad_width[i][j]);
+	param->pad_width.push_back(tmp);
+      }
+      param->pad_mode = padAttrs->pad_mode;
+      auto arg1 = call->args[1];
+      if (arg1->IsInstance<ConstantNode>()) {
+	auto pad_val = Downcast<Constant>(arg1);
+	if (pad_val->is_scalar())
+	  param->pad_value = (*((float *)(pad_val->data->data)));
+      }
+      datatype_enum useless;
+      const TensorTypeNode *ittype, *ottype;
+      std::vector<int> ishape, oshape;
+      ittype = call->args[0]->checked_type().as<TensorTypeNode>();
+      ishape = GetShape(call->args[0]->checked_type());
+      ottype = call->checked_type().as<TensorTypeNode>();
+      oshape = GetShape(call->checked_type());
+      Common_param common;
+      for (size_t i = 0; i < ishape.size(); i++) {
+        common.input_shape[i] = ishape[i];
+      }
+      for (size_t i = 0; i < oshape.size(); i++) {
+        common.output_shape[i] = oshape[i];
+      }
+
+      set_datatype(ittype, NULL, ottype, common.input_datatype, useless,
+                   common.output_datatype);
+
+      if (iscale_[0] != 1.0) {
+        common.iscale[0] = iscale_[0];
+        common.input_datatype = datatype_enum::RINT8;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+        LOG(INFO) << "### Exp iscale_[0]: " << iscale_[0];
+        iscale_[0] = 1.0;
+      } else {
+        LOG(INFO) << "### Exp iscale_ None";
+        common.input_datatype = datatype_enum::RFLOAT;
+        common.output_datatype = datatype_enum::RFLOAT;  // RFLOAT
+      }
+      LOG(INFO) << "### Exp input_shape: " << common.input_shape[0] << " " << common.input_shape[1] << " " << common.input_shape[2] << " " << common.input_shape[3];
+      LOG(INFO) << "### Exp output_shape: " << common.output_shape[0] << " " << common.output_shape[1] << " " << common.output_shape[2] << " " << common.output_shape[3];
+
+      auto it = expr_execute_order_.find(call->args[0]);
+      if (it != expr_execute_order_.end()) {
+        common.input_offset = it->second;
+      }
+      else {
+        // its' input is network's input, since we know it will not have so many operators in single fused riscv function
+        common.input_offset = (size_t) - 1; // MAX value size_t can hold
+      }
+      param->com_par = common;
+      return riscv_code;
+    }
+
+    typedef Riscv_code* (CodegenAIPU::*operator2riscv)(const CallNode *);
+    std::map<std::string, operator2riscv> relayParseTable = {
+      {"nn.conv2d", &CodegenAIPU::Conv2d},
+      {"nn.dense", &CodegenAIPU::Dense},
+      {"nn.relu", &CodegenAIPU::Relu},
+      {"nn.leaky_relu", &CodegenAIPU::Relu},
+      {"nn.softmax", &CodegenAIPU::Softmax},
+      {"reshape", &CodegenAIPU::Reshape},
+      {"nn.max_pool2d", &CodegenAIPU::Pool2d},
+      {"nn.avg_pool2d", &CodegenAIPU::Pool2d},
+      {"add", &CodegenAIPU::Add},
+      {"image.resize", &CodegenAIPU::Resize},
+      {"concatenate", &CodegenAIPU::Concat},
+      {"sigmoid", &CodegenAIPU::Sigmoid},
+      {"strided_slice", &CodegenAIPU::Strided_slice},
+      {"multiply", &CodegenAIPU::Multiply},
+      {"exp", &CodegenAIPU::Exp},
+      {"expand_dims", &CodegenAIPU::Expand_dims},
+      {"take", &CodegenAIPU::Take},
+      {"one_hot", &CodegenAIPU::One_hot},
+      {"less", &CodegenAIPU::Less},
+      {"nn.batch_matmul", &CodegenAIPU::Batch_matmul},
+      {"transpose", &CodegenAIPU::Transpose},
+      {"cast", &CodegenAIPU::Cast},
+      {"subtract", &CodegenAIPU::Subtract},
+      {"power", &CodegenAIPU::Power},
+      {"divide", &CodegenAIPU::Divide},
+      {"max", &CodegenAIPU::Max},
+      {"sqrt", &CodegenAIPU::Sqrt},
+      {"erf", &CodegenAIPU::Erf},
+      {"tanh", &CodegenAIPU::Tanh},
+      {"sum", &CodegenAIPU::Sum},
+      {"split", &CodegenAIPU::Split},
+      {"mean", &CodegenAIPU::Mean},
+      {"squeeze", &CodegenAIPU::Squeeze},
+      {"nn.pad", &CodegenAIPU::Pad},
+    };
+
+    // void VisitExpr_(const VarNode* node) final {}
+
+    // void VisitExpr_(const ConstantNode* cn) final {}
+
+    // need to deal with in the future
+    // void VisitExpr_(const TupleNode* n) final {}
+    void VisitExpr_(const TupleNode* op) final {
+      for (auto field : op->fields) {
+        VisitExpr(field);
+      }
+    }
+
+    void VisitExpr_(const CallNode* call) final {
+      for (auto arg : call->args) {
+        if (arg->IsInstance<CallNode>()) {
+          VisitExpr(arg);
+        }
+      }
+      Riscv_code *riscv_code;
+      const auto* op_node = call->op.as<OpNode>();
+      const auto op_name = GetRef<Op>(op_node)->name;
+
+      if (op_name == "relay.op.annotation.simulated_quantize") {
+        auto argconst = Downcast<Constant>(call->args[1]);
+        float scale = *((float*)argconst->data->data);
+        inscale_map_.insert(std::pair<Expr, float>(GetRef<Expr>(call), scale));
+        return;
+      } else if (op_name == "annotation.stop_fusion" || op_name == "annotation.cast_hint") {
+        if (inscale_map_.find(call->args[0]) != inscale_map_.end()) {
+          float scale = inscale_map_[call->args[0]];
+          inscale_map_.insert(std::pair<Expr, float>(GetRef<Expr>(call), scale));
+        }
+        return;
+      }
+      
+      std::map<std::string, operator2riscv>::iterator it = relayParseTable.find(op_name);
+      if (it == relayParseTable.end())
+        LOG(FATAL) << "AIPU RISCV codegen doesn't support: " << op_name;
+
+      if (!flag_first){
+        int i_ = 0;
+        for (auto arg : call->args) {
+          if (inscale_map_.find(arg) != inscale_map_.end()) {
+            iscale_[i_] = inscale_map_[arg];
+            LOG(INFO) <<"RISC-V input scale:" << iscale_[i_];
+          } else {
+            LOG(INFO) <<"RISC-V input scale None";
+            iscale_[i_] = -1.0f;
+          }
+          i_++;
+        }
+      }
+
+
+      if (outscale_map_.find(GetRef<Expr>(call)) != outscale_map_.end()) {
+        oscale_ = outscale_map_[GetRef<Expr>(call)];
+      } else {
+        oscale_ = -1.0f;
+      }
+
+      LOG(INFO) << "pass iscale_[0]: " << iscale_[0];
+      LOG(INFO) << "pass oscale_: " << oscale_;
+
+      riscv_code = (this->*it->second)(call);
+      expr_execute_order_.insert(std::pair<Expr, size_t>(GetRef<Expr>(call), riscv_code_.size()));
+      riscv_code_.push_back(riscv_code);
+
+      flag_first = false;
+    }
+
+    void preprocess(std::map<Expr, float> scale_map, float* iscale) {
+      for (auto it : storage_device_map_) {
+        const auto* tutype = (it.first)->checked_type().as<TupleTypeNode>();
+        const auto* ttype = (it.first)->checked_type().as<TensorTypeNode>();
+        ICHECK(ttype != nullptr || tutype != nullptr);
+        size_t output_size = 0;
+        if (ttype != nullptr) {
+          size_t tmp_size = 1;
+          for (IndexExpr dim : ttype->shape) {
+            const int64_t* pval = tir::as_const_int(dim);
+            ICHECK(pval != nullptr) << "Cannot allocate memory symbolic tensor shape " << ttype->shape;
+            ICHECK_GE(*pval, 0) << "Cannot allocate memory for tensor with negative shape" << *pval;
+            tmp_size *= static_cast<size_t>(pval[0]);
+          }
+          tmp_size *= divRoundUp(ttype->dtype.bits() * ttype->dtype.lanes(), 8);
+          output_size = tmp_size;
+        }
+        else if (tutype != nullptr) {
+          for (auto field : tutype->fields) {
+            size_t tmp_size = 1;
+            const auto* tmptype = field.as<TensorTypeNode>();
+            for (IndexExpr dim : tmptype->shape) {
+              const int64_t* pval = tir::as_const_int(dim);
+              ICHECK(pval != nullptr) << "Cannot allocate memory symbolic tensor shape " << tmptype->shape;
+              ICHECK_GE(*pval, 0) << "Cannot allocate memory for tensor with negative shape" << *pval;
+              tmp_size *= static_cast<size_t>(pval[0]);
+            }
+            tmp_size *= divRoundUp(tmptype->dtype.bits() * tmptype->dtype.lanes(), 8);
+            output_size += tmp_size;
+          }
+        }
+        int storage_id = (it.second)[0][0];
+        if (temporary_data_storage_.find(storage_id) == temporary_data_storage_.end()) {
+          temporary_data_storage_.insert(std::pair<int,size_t>(storage_id, output_size));
+        }
+        else if (output_size > temporary_data_storage_[storage_id]) {
+          temporary_data_storage_[storage_id] = output_size;
+        }
+      }
+      
+      outscale_map_ = scale_map;
+      iscale_ = iscale;
+    }
+
+    std::vector<Riscv_code *> GetRiscvSource() {
+      LOG(INFO) << "pass riscv_code_ sise(): " << riscv_code_.size();
+      return riscv_code_;
+    }
+
+    void debug() {
+      for (auto it : temporary_data_storage_)
+        LOG(INFO) << "storage_id " << it.first << " size " << it.second;
+      for (auto it : temporary_data_offset_)
+        LOG(INFO) << "storage_id " << it.first << " offset " << it.second;
+    }
+
+  protected:
+    // plan memory of operators and weights
+    Map<Expr, Array<IntegerArray>> storage_device_map_;
+    // used for accumulated weight, weight memory block won't be reused
+    size_t weight_memory_used_;
+    // used for accumulated operator input and output, these memory block can be  reused
+    size_t data_memory_used_;
+    // map between memory block and its' size
+    std::map<int, size_t> temporary_data_storage_;
+    // map between memory block and its' offset
+    std::map<int, size_t> temporary_data_offset_;
+    // final riscv code
+    std::vector<Riscv_code *> riscv_code_;
+
+    std::map<Expr, size_t> expr_execute_order_;
+
+    std::map<Expr, float> inscale_map_;
+    std::map<Expr, float> outscale_map_;
+    float* iscale_;
+    float oscale_ = -1.0f;
+    bool flag_first = true;
+  };
+
+  std::vector<Riscv_code *> CompileFunc4Riscv (const Function& func, std::map<Expr, float> scale_map, float* iscale) {
+    Map<Expr, Array<IntegerArray>> storage_device_map;
+    auto pfGraphMem = tvm::relay::backend::GetPackedFunc("relay.backend.GraphPlanMemory");
+    storage_device_map = (*pfGraphMem)(func);
+    CodegenAIPU codegen_riscv(storage_device_map);
+    codegen_riscv.preprocess(scale_map, iscale);
+    codegen_riscv.VisitExpr(func->body);
+    codegen_riscv.debug();
+    // LOG(INFO) << "Map size " << storage_device_map.size();
+    // for (auto mapInfo : storage_device_map)
+    //   {
+    //     auto outshape = tvm::relay::backend::GetShape(static_cast<tvm::relay::Call *>(&(mapInfo.first))->get()->checked_type());
+    //     LOG(INFO) << "map key:" << static_cast<tvm::relay::Call *>(&(mapInfo.first))->get()->op;
+    //     for (size_t i = 0; i < outshape.size(); i++)
+    //       LOG(INFO)<< " shape " << outshape[i] << " ";
+    //     LOG(INFO) << "map key:" << mapInfo.second.size();
+    //     for(auto inter : mapInfo.second)
+    //       {
+    //         LOG(INFO)<<"map value: "<< inter;
+    //       }
+    //   }
+    return codegen_riscv.GetRiscvSource();
+  }
+}
+}  // namespace contrib
+}  // namespace relay
+}  // namespace tvm
+
+#endif  // TVM_RELAY_BACKEND_CONTRIB_AIPU_CODEGEN_RISCV_H_

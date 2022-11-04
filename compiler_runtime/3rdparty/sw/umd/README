@@ -1,0 +1,4 @@
+1、使用libprotobuf.so替换掉原始版本的libprotobuf.a
+2、apps/compiler 和 core/src/compiler下的libprotobuf.so libprotobuf.so.9均是软链接
+3、删除了某个不存在的头文件，具体是哪个需要对照原版本
+4、修改了apps/compiler 和 core/src/compiler下的Makefile关于libprotobuf.a的部分
