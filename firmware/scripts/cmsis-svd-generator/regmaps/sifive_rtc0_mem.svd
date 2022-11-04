@@ -1,0 +1,47 @@
+<registers>
+  <register>
+    <name>rtccfg</name>
+    <description>rtc Configuration</description>
+    <addressOffset>0x40</addressOffset>
+    <fields>
+      <field>
+        <name>rtcscale</name>
+        <description>Counter scale value.</description>
+        <bitRange>[3:0]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>rtcenalways</name>
+        <description>Enable Always - run continuously</description>
+        <bitRange>[12:12]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>rtcip0</name>
+        <description>Interrupt 0 Pending</description>
+        <bitRange>[28:28]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>rtccountlo</name>
+    <description>Low bits of Counter</description>
+    <addressOffset>0x48</addressOffset>
+  </register>
+  <register>
+    <name>rtccounthi</name>
+    <description>High bits of Counter</description>
+    <addressOffset>0x4C</addressOffset>
+  </register>
+  <register>
+    <name>rtcs</name>
+    <description>Scaled value of Counter</description>
+    <addressOffset>0x50</addressOffset>
+  </register>
+  <register>
+    <name>rtccmp0</name>
+    <description>Comparator 0</description>
+    <addressOffset>0x60</addressOffset>
+  </register>
+</registers>

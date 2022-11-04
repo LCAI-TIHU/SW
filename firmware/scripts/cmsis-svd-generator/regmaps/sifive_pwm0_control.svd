@@ -1,0 +1,219 @@
+<registers>
+  <register>
+    <name>pwmcfg</name>
+    <description>PWM configuration register</description>
+    <addressOffset>0x0</addressOffset>
+    <fields>
+      <field>
+        <name>pwmscale</name>
+        <description>PWM Counter scale</description>
+        <bitRange>[3:0]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pwmsticky</name>
+        <description>PWM Sticky - disallow clearing pwmcmpXip bits</description>
+        <bitRange>[8:8]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pwmzerocmp</name>
+        <description>PWM Zero - counter resets to zero after match</description>
+        <bitRange>[9:9]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pwmdeglitch</name>
+        <description>PWM Deglitch - latch pwmcmpXip within same cycle</description>
+        <bitRange>[10:10]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pwmenalways</name>
+        <description>PWM enable always - run continuously</description>
+        <bitRange>[12:12]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pwmenoneshot</name>
+        <description>PWM enable one shot - run one cycle</description>
+        <bitRange>[13:13]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pwmcmp0center</name>
+        <description>PWM0 Compare Center</description>
+        <bitRange>[16:16]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pwmcmp1center</name>
+        <description>PWM1 Compare Center</description>
+        <bitRange>[17:17]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pwmcmp2center</name>
+        <description>PWM2 Compare Center</description>
+        <bitRange>[18:18]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pwmcmp3center</name>
+        <description>PWM3 Compare Center</description>
+        <bitRange>[19:19]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pwmcmp0invert</name>
+        <description>PWM0 Invert</description>
+        <bitRange>[20:20]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pwmcmp1invert</name>
+        <description>PWM1 Invert</description>
+        <bitRange>[21:21]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pwmcmp2invert</name>
+        <description>PWM2 Invert</description>
+        <bitRange>[22:22]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pwmcmp3invert</name>
+        <description>PWM3 Invert</description>
+        <bitRange>[23:23]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pwmcmp0gang</name>
+        <description>PWM0/PWM1 Compare Gang</description>
+        <bitRange>[24:24]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pwmcmp1gang</name>
+        <description>PWM1/PWM2 Compare Gang</description>
+        <bitRange>[25:25]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pwmcmp2gang</name>
+        <description>PWM2/PWM3 Compare Gang</description>
+        <bitRange>[26:26]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pwmcmp3gang</name>
+        <description>PWM3/PWM0 Compare Gang</description>
+        <bitRange>[27:27]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pwmcmp0ip</name>
+        <description>PWM0 Interrupt Pending</description>
+        <bitRange>[28:28]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pwmcmp1ip</name>
+        <description>PWM1 Interrupt Pending</description>
+        <bitRange>[29:29]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pwmcmp2ip</name>
+        <description>PWM2 Interrupt Pending</description>
+        <bitRange>[30:30]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pwmcmp3ip</name>
+        <description>PWM3 Interrupt Pending</description>
+        <bitRange>[31:31]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>pwmcount</name>
+    <description>PWM count register</description>
+    <addressOffset>0x8</addressOffset>
+    <fields>
+      <field>
+        <name>pwmcount</name>
+        <description>PWM count register.</description>
+        <bitRange>[30:0]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>pwms</name>
+    <description>Scaled PWM count register</description>
+    <addressOffset>0x10</addressOffset>
+    <fields>
+      <field>
+        <name>pwms</name>
+        <description>Scaled PWM count register.</description>
+        <bitRange>[15:0]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>pwmcmp0</name>
+    <description>PWM 0 compare register</description>
+    <addressOffset>0x20</addressOffset>
+    <fields>
+      <field>
+        <name>pwmcmp0</name>
+        <description>PWM 0 Compare Value</description>
+        <bitRange>[15:0]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>pwmcmp1</name>
+    <description>PWM 1 compare register</description>
+    <addressOffset>0x24</addressOffset>
+    <fields>
+      <field>
+        <name>pwmcmp1</name>
+        <description>PWM 1 Compare Value</description>
+        <bitRange>[15:0]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>pwmcmp2</name>
+    <description>PWM 2 compare register</description>
+    <addressOffset>0x28</addressOffset>
+    <fields>
+      <field>
+        <name>pwmcmp2</name>
+        <description>PWM 2 Compare Value</description>
+        <bitRange>[15:0]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>pwmcmp3</name>
+    <description>PWM 3 compare register</description>
+    <addressOffset>0x2C</addressOffset>
+    <fields>
+      <field>
+        <name>pwmcmp3</name>
+        <description>PWM 3 Compare Value</description>
+        <bitRange>[15:0]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+</registers>

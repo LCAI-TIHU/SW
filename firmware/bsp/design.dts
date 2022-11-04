@@ -1,0 +1,6 @@
+/include/ "core.dts"
+/ {
+	chosen {
+		stdout-path = "/soc/serial@10013000:115200";
+	};
+};

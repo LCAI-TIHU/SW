@@ -1,0 +1,1 @@
+cmd_/data/wangchen/docker-aipu/pcie_tes/xdma/xdma.ko := ld -r -m elf_x86_64 -z max-page-size=0x200000 -T ./scripts/module-common.lds --build-id  -o /data/wangchen/docker-aipu/pcie_tes/xdma/xdma.ko /data/wangchen/docker-aipu/pcie_tes/xdma/xdma.o /data/wangchen/docker-aipu/pcie_tes/xdma/xdma.mod.o ;  true

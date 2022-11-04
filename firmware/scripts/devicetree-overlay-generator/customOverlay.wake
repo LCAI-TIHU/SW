@@ -1,0 +1,80 @@
+#
+# Wake API for Specifying a custom Devicetree Overlay
+#
+# If the needs of your project aren't met by the heuristics
+# of the python-based overlay generator, you can instead
+# generate a custom overlay using these wake rules to specify
+# the properties in the chosen node.
+#
+# Example:
+# --------
+#
+# def entry = makeDevicetreeChosenMemoryEntry "/soc/bootrom@20000000" 0 0
+# def ram = makeDevicetreeChosenMemoryRam "/soc/sram@80000000" 0 0
+# def itim = None
+# def chosenNode = makeDevicetreeChosenNode entry ram itim
+#
+# makeDevicetreeCustomOverlay ("core.dts", Nil) chosenNode
+# | (writeDevicetreeCustomOverlay "design.dts" _)
+#
+
+
+tuple DevicetreeChosenMemory =
+  global Property:  String
+  global NodePath:  String
+  global RegTuple:  Integer
+  global RegOffset: Integer
+
+global def makeDevicetreeChosenMemoryEntry nodePath regTuple regOffset =
+  DevicetreeChosenMemory "metal,entry" nodePath regTuple regOffset
+
+global def makeDevicetreeChosenMemoryRam nodePath regTuple regOffset =
+  DevicetreeChosenMemory "metal,ram" nodePath regTuple regOffset
+
+global def makeDevicetreeChosenMemoryItim nodePath regTuple regOffset =
+  DevicetreeChosenMemory "metal,itim" nodePath regTuple regOffset
+
+tuple DevicetreeChosenNode =
+  global Entry: DevicetreeChosenMemory
+  global Ram:   DevicetreeChosenMemory
+  global Itim:  Option DevicetreeChosenMemory
+
+global def makeDevicetreeChosenNode entry ram itim =
+  DevicetreeChosenNode entry ram itim
+
+tuple DevicetreeCustomOverlay =
+  global Includes:           List String
+  global ChosenNode:         DevicetreeChosenNode
+  global AdditionalContents: String
+
+global def makeDevicetreeCustomOverlay includes chosenNode =
+  DevicetreeCustomOverlay includes chosenNode ""
+
+global target writeDevicetreeCustomOverlay file customOverlay =
+  def makeInclude include =
+    "/include/ \"{include}\"\n", Nil
+  def includes = mapFlat makeInclude customOverlay.getDevicetreeCustomOverlayIncludes
+
+  def chosenContents =
+    def makeLine chosenMemory =
+      def property = chosenMemory.getDevicetreeChosenMemoryProperty
+      def reference = "&\{{chosenMemory.getDevicetreeChosenMemoryNodePath}\}"
+      def regTuple = "{str chosenMemory.getDevicetreeChosenMemoryRegTuple}"
+      def regOffset = "{str chosenMemory.getDevicetreeChosenMemoryRegOffset}"
+
+      "    {property} = <{reference} {regTuple} {regOffset}>;\n"
+
+    def chosenNode = customOverlay.getDevicetreeCustomOverlayChosenNode
+    def entry = makeLine chosenNode.getDevicetreeChosenNodeEntry
+    def ram = makeLine chosenNode.getDevicetreeChosenNodeRam
+    def itim = match chosenNode.getDevicetreeChosenNodeItim
+      Some chosenMemory = makeLine chosenMemory
+      None = ""
+
+    "  chosen \{\n{entry}{ram}{itim}  \};\n"
+
+  def rootNode = "/ \{\n{chosenContents}\};"
+
+  def additionalContents = customOverlay.getDevicetreeCustomOverlayAdditionalContents
+
+  write file (cat (includes ++ (rootNode, additionalContents, Nil)))

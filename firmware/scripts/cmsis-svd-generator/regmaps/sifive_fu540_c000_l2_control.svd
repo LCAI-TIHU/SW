@@ -1,0 +1,38 @@
+<registers>
+  <register>
+    <name>config</name>
+    <description>Information about the Cache Configuration</description>
+    <addressOffset>0x0</addressOffset>
+    <fields>
+      <field>
+        <name>banks</name>
+        <description>Number of banks in the cache</description>
+        <bitRange>[7:0]</bitRange>
+        <access>read-only</access>
+      </field>
+      <field>
+        <name>ways</name>
+        <description>Number of ways per bank</description>
+        <bitRange>[15:8]</bitRange>
+        <access>read-only</access>
+      </field>
+      <field>
+        <name>lgsets</name>
+        <description>Base-2 logarithm of the sets per bank</description>
+        <bitRange>[23:16]</bitRange>
+        <access>read-only</access>
+      </field>
+      <field>
+        <name>lgblockbytes</name>
+        <description>Base-2 logarithm of the bytes per cache block</description>
+        <bitRange>[31:24]</bitRange>
+        <access>read-only</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>wayenable</name>
+    <description>The index of the largest way which has been enabled. May only be increased.</description>
+    <addressOffset>0x8</addressOffset>
+  </register>
+</registers>

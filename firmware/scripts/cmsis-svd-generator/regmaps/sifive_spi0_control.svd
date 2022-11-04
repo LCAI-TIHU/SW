@@ -1,0 +1,344 @@
+<registers>
+  <register>
+    <name>sckdiv</name>
+    <description>Serial clock divisor</description>
+    <addressOffset>0x0</addressOffset>
+    <fields>
+      <field>
+        <name>div</name>
+        <description>Divisor for serial clock.</description>
+        <bitRange>[11:0]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>sckmode</name>
+    <description>Serial clock mode</description>
+    <addressOffset>0x4</addressOffset>
+    <fields>
+      <field>
+        <name>pha</name>
+        <description>Serial clock phase</description>
+        <bitRange>[0:0]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pol</name>
+        <description>Serial clock polarity</description>
+        <bitRange>[1:1]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>csid</name>
+    <description>Chip select ID</description>
+    <addressOffset>0x10</addressOffset>
+    <fields>
+      <field>
+        <name>csid</name>
+        <description>Chip select ID.</description>
+        <bitRange>[31:0]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>csdef</name>
+    <description>Chip select default</description>
+    <addressOffset>0x14</addressOffset>
+    <fields>
+      <field>
+        <name>csdef</name>
+        <description>Chip select default value. Reset to all-1s.</description>
+        <bitRange>[31:0]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>csmode</name>
+    <description>Chip select mode</description>
+    <addressOffset>0x18</addressOffset>
+    <fields>
+      <field>
+        <name>mode</name>
+        <description>Chip select mode</description>
+        <bitRange>[1:0]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>delay0</name>
+    <description>Delay control 0</description>
+    <addressOffset>0x28</addressOffset>
+    <fields>
+      <field>
+        <name>cssck</name>
+        <description>CS to SCK Delay</description>
+        <bitRange>[7:0]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>sckcs</name>
+        <description>SCK to CS Delay</description>
+        <bitRange>[23:16]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>delay1</name>
+    <description>Delay control 1</description>
+    <addressOffset>0x2C</addressOffset>
+    <fields>
+      <field>
+        <name>intercs</name>
+        <description>Minimum CS inactive time</description>
+        <bitRange>[7:0]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>interxfr</name>
+        <description>Maximum interframe delay</description>
+        <bitRange>[23:16]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>extradel</name>
+    <description>SPI extra sampling delay to increase the SPI frequency</description>
+    <addressOffset>0x38</addressOffset>
+    <fields>
+      <field>
+        <name>coarse</name>
+        <description>Coarse grain sample delay (multiples of system clocks)</description>
+        <bitRange>[11:0]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>fine</name>
+        <description>Fine grain sample delay (multiples of process-specific buffer delay)</description>
+        <bitRange>[16:12]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>sampledel</name>
+    <description>Number of delay stages from slave to the SPI controller</description>
+    <addressOffset>0x3C</addressOffset>
+    <fields>
+      <field>
+        <name>sd</name>
+        <description>Number of delay stages from slave to SPI controller</description>
+        <bitRange>[4:0]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>fmt</name>
+    <description>Frame format</description>
+    <addressOffset>0x40</addressOffset>
+    <fields>
+      <field>
+        <name>proto</name>
+        <description>SPI protocol</description>
+        <bitRange>[1:0]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>endian</name>
+        <description>SPI endianness</description>
+        <bitRange>[2:2]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>dir</name>
+        <description>SPI I/O direction. This is reset to 1 for flash-enabled SPI controllers, 0 otherwise.</description>
+        <bitRange>[3:3]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>len</name>
+        <description>Number of bits per frame</description>
+        <bitRange>[19:16]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>txdata</name>
+    <description>Tx FIFO Data</description>
+    <addressOffset>0x48</addressOffset>
+    <fields>
+      <field>
+        <name>data</name>
+        <description>Transmit data</description>
+        <bitRange>[7:0]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>full</name>
+        <description>FIFO full flag</description>
+        <bitRange>[31:31]</bitRange>
+        <access>read-only</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>rxdata</name>
+    <description>Rx FIFO data</description>
+    <addressOffset>0x4C</addressOffset>
+    <fields>
+      <field>
+        <name>data</name>
+        <description>Received data</description>
+        <bitRange>[7:0]</bitRange>
+        <access>read-only</access>
+      </field>
+      <field>
+        <name>empty</name>
+        <description>FIFO empty flag</description>
+        <bitRange>[31:31]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>txmark</name>
+    <description>Tx FIFO watermark</description>
+    <addressOffset>0x50</addressOffset>
+    <fields>
+      <field>
+        <name>txmark</name>
+        <description>Transmit watermark. The reset value is 1 for flash-enabled controllers, 0 otherwise.</description>
+        <bitRange>[2:0]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>rxmark</name>
+    <description>Rx FIFO watermark</description>
+    <addressOffset>0x54</addressOffset>
+    <fields>
+      <field>
+        <name>rxmark</name>
+        <description>Receive watermark</description>
+        <bitRange>[2:0]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>fctrl</name>
+    <description>SPI flash interface control</description>
+    <addressOffset>0x60</addressOffset>
+    <fields>
+      <field>
+        <name>en</name>
+        <description>SPI Flash Mode Select</description>
+        <bitRange>[0:0]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>ffmt</name>
+    <description>SPI flash instruction format</description>
+    <addressOffset>0x64</addressOffset>
+    <fields>
+      <field>
+        <name>cmd_en</name>
+        <description>Enable sending of command</description>
+        <bitRange>[0:0]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>addr_len</name>
+        <description>Number of address bytes (0 to 4)</description>
+        <bitRange>[3:1]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pad_cnt</name>
+        <description>Number of dummy cycles</description>
+        <bitRange>[7:4]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>cmd_proto</name>
+        <description>Protocol for transmitting command</description>
+        <bitRange>[9:8]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>addr_proto</name>
+        <description>Protocol for transmitting address and padding</description>
+        <bitRange>[11:10]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>data_proto</name>
+        <description>Protocol for receiving data bytes</description>
+        <bitRange>[13:12]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>cmd_code</name>
+        <description>Value of command byte</description>
+        <bitRange>[23:16]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>pad_code</name>
+        <description>First 8 bits to transmit during dummy cycles</description>
+        <bitRange>[31:24]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>ie</name>
+    <description>SPI interrupt enable</description>
+    <addressOffset>0x70</addressOffset>
+    <fields>
+      <field>
+        <name>txwm</name>
+        <description>Transmit watermark enable</description>
+        <bitRange>[0:0]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>rxwm</name>
+        <description>Receive watermark enable</description>
+        <bitRange>[1:1]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>ip</name>
+    <description>SPI interrupt pending</description>
+    <addressOffset>0x74</addressOffset>
+    <fields>
+      <field>
+        <name>txwm</name>
+        <description>Transmit watermark pending</description>
+        <bitRange>[0:0]</bitRange>
+        <access>read-only</access>
+      </field>
+      <field>
+        <name>rxwm</name>
+        <description>Receive watermark pending</description>
+        <bitRange>[1:1]</bitRange>
+        <access>read-only</access>
+      </field>
+    </fields>
+  </register>
+</registers>

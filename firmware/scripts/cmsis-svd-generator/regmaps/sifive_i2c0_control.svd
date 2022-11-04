@@ -1,0 +1,91 @@
+<registers>
+  <register>
+    <name>prescale_low</name>
+    <description>Clock Prescale register lo-byte</description>
+    <addressOffset>0x0</addressOffset>
+  </register>
+  <register>
+    <name>prescale_high</name>
+    <description>Clock Prescale register hi-byte</description>
+    <addressOffset>0x4</addressOffset>
+  </register>
+  <register>
+    <name>control</name>
+    <description>Control register</description>
+    <addressOffset>0x8</addressOffset>
+    <fields>
+      <field>
+        <name>en</name>
+        <description>I2C core enable bit</description>
+        <bitRange>[6:6]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>ien</name>
+        <description>I2C core interrupt enable bit</description>
+        <bitRange>[7:7]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>transmit__receive</name>
+    <description>Transmit and receive data byte register</description>
+    <addressOffset>0xC</addressOffset>
+  </register>
+  <register>
+    <name>command__status</name>
+    <description>Command write and status read register</description>
+    <addressOffset>0x10</addressOffset>
+    <fields>
+      <field>
+        <name>wr_iack__rd_if</name>
+        <description>Clear interrupt and Interrupt pending</description>
+        <bitRange>[0:0]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>wr_res__rd_tip</name>
+        <description>Reserved and Transfer in progress</description>
+        <bitRange>[1:1]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>wr_res__rd_res</name>
+        <description>Reserved and Reserved</description>
+        <bitRange>[2:2]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>wr_ack__rd_res</name>
+        <description>Send ACK/NACK and Reserved</description>
+        <bitRange>[3:3]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>wr_txd__rd_res</name>
+        <description>Transmit data and Reserved</description>
+        <bitRange>[4:4]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>wr_rxd__rd_al</name>
+        <description>Receive data and Arbitration lost</description>
+        <bitRange>[5:5]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>wr_sto__rd_busy</name>
+        <description>Generate stop and I2C bus busy</description>
+        <bitRange>[6:6]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>wr_sta__rd_rxack</name>
+        <description>Generate start and Got ACK/NACK</description>
+        <bitRange>[7:7]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+</registers>

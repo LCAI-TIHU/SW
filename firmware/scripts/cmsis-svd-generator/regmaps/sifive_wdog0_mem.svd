@@ -1,0 +1,70 @@
+<registers>
+  <register>
+    <name>wdogcfg</name>
+    <description>wdog Configuration</description>
+    <addressOffset>0x0</addressOffset>
+    <fields>
+      <field>
+        <name>wdogscale</name>
+        <description>Counter scale value.</description>
+        <bitRange>[3:0]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>wdogrsten</name>
+        <description>Controls whether the comparator output can set the wdogrst bit and hence cause a full reset.</description>
+        <bitRange>[8:8]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>wdogzerocmp</name>
+        <description>Reset counter to zero after match.</description>
+        <bitRange>[9:9]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>wdogenalways</name>
+        <description>Enable Always - run continuously</description>
+        <bitRange>[12:12]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>wdogcoreawake</name>
+        <description>Increment the watchdog counter if the processor is not asleep</description>
+        <bitRange>[13:13]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>wdogip0</name>
+        <description>Interrupt 0 Pending</description>
+        <bitRange>[28:28]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>wdogcount</name>
+    <description>Counter Register</description>
+    <addressOffset>0x8</addressOffset>
+  </register>
+  <register>
+    <name>wdogs</name>
+    <description>Scaled value of Counter</description>
+    <addressOffset>0x10</addressOffset>
+  </register>
+  <register>
+    <name>wdogfeed</name>
+    <description>Feed register</description>
+    <addressOffset>0x18</addressOffset>
+  </register>
+  <register>
+    <name>wdogkey</name>
+    <description>Key Register</description>
+    <addressOffset>0x1C</addressOffset>
+  </register>
+  <register>
+    <name>wdogcmp0</name>
+    <description>Comparator 0</description>
+    <addressOffset>0x20</addressOffset>
+  </register>
+</registers>

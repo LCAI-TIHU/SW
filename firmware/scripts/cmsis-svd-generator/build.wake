@@ -1,0 +1,79 @@
+tuple SVDGeneratorOptions =
+  global TopDTSFile:    Path
+  global OtherDTSFiles: List Path
+  global OutputFile:    String
+
+# Instead of copying the script sources into build/{here}, we'll just
+# execute directly out of the package directory, since nothing gets
+# modified during execution.
+#
+# The virtualenv does get placed in build/{here} by
+# addPythonRequirementsEnv, along with a copy of requirements.txt
+def generatorDir = here
+
+#######################################################################
+# makeSVDGeneratorOptions takes the following parameters:
+#   - topDTSFile: The top-level Devicetree source file
+#   - otherDTSFiles: any other Devicetree source files included in the
+#                    hierarchy of Devicetree source files
+#   - outputFile: A string representing the path of the output file to
+#                 produce
+#######################################################################
+global def makeSVDGeneratorOptions topDTSFile otherDTSFiles outputFile =
+  SVDGeneratorOptions topDTSFile otherDTSFiles outputFile
+
+global def runSVDGenerator options =
+  def topDTSFile = options.getSVDGeneratorOptionsTopDTSFile
+  def otherDTSFiles = options.getSVDGeneratorOptionsOtherDTSFiles
+
+  def inputs =
+    # During execution, the generator needs access to both
+    # Python sources and the svd template files
+    def generatorSources = sources here `.*\.(py|svd)`
+    def dtsSources = topDTSFile, otherDTSFiles
+    def outDir = mkdir "{output}/.."
+    outDir, generatorSources ++ dtsSources
+
+  def output = options.getSVDGeneratorOptionsOutputFile
+
+  def args =
+    def output =
+      "-o", options.getSVDGeneratorOptionsOutputFile,
+      Nil
+
+    def dts =
+      "-d", topDTSFile.getPathName,
+      Nil
+
+    output ++ dts
+
+  makePlan (pythonCommand "{generatorDir}/generate_svd.py" args) inputs
+  | addPlanRelativePath "PYTHONPATH" generatorDir
+  | addPythonRequirementsEnv generatorDir
+  | setPlanFnOutputs (\_ output, Nil)
+  | runJob
+
+# This allows the python virtualenv to be created prior to running a build
+# with `wake preinstall Unit`.
+publish preinstall = (pythonRequirementsInstaller generatorDir), Nil
+
+#########################################################################
+# installSVDGenerator allows wake flows to install the CMSIS SVD
+# generator in customer deliveries and exclude all content which does not
+# directly contribute to the generation of customer BSP content.
+# It takes the following parameter
+#   - installPath: the path to install the generator in
+# For example, if you call `installSVDGenerator "scripts"`
+# the generator script will be found in
+#   scripts/cmsis-svd-generator/generate_svd.py
+#########################################################################
+global target installSVDGenerator installPath =
+  def generatorSources =
+    source "{here}/README.md",
+    source "{here}/LICENSE",
+    source "{here}/generate_svd.py",
+    sources "{here}/regmaps" `.*\.svd` ++
+    sources "{here}/scripts" `.*\.py`
+
+  mkdir installPath,
+  map (installIn installPath) generatorSources

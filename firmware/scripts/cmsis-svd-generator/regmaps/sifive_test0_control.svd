@@ -1,0 +1,21 @@
+<registers>
+  <register>
+    <name>finisher</name>
+    <description>Test finisher register</description>
+    <addressOffset>0x0</addressOffset>
+    <fields>
+      <field>
+        <name>status</name>
+        <description>Test status</description>
+        <bitRange>[15:0]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>code</name>
+        <description>Finisher code</description>
+        <bitRange>[31:16]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+</registers>

@@ -1,0 +1,95 @@
+tuple OpenOCDConfigGeneratorOptions =
+  global TopDTSFile:    Path
+  global OtherDTSFiles: List Path
+  global Type:          String
+  global OutputFile:    String
+  global Protocol:      String
+  global Tunnel:        Boolean
+
+# Instead of copying the script sources into build/{here}, we'll just
+# execute directly out of the package directory, since nothing gets
+# modified during execution.
+#
+# The virtualenv does get placed in build/{here} by
+# addPythonRequirementsEnv, along with a copy of requirements.txt
+def generatorDir = here
+
+#######################################################################
+# makeOpenOCDConfigGeneratorOptions takes the following parameters:
+#   - topDTSFile: The top-level Devicetree source file
+#   - otherDTSFiles: any other Devicetree source files included in the
+#                    hierarchy of Devicetree source files
+#   - type: One of {arty, vc707, hifive}
+#   - outputFile: A string representing the path of the output file to
+#                 produce
+#######################################################################
+global def makeOpenOCDConfigGeneratorOptions topDTSFile otherDTSFiles type_ outputFile =
+  OpenOCDConfigGeneratorOptions topDTSFile otherDTSFiles type_ outputFile "jtag" False
+
+global def runOpenOCDConfigGenerator options =
+  def topDTSFile = options.getOpenOCDConfigGeneratorOptionsTopDTSFile
+  def otherDTSFiles = options.getOpenOCDConfigGeneratorOptionsOtherDTSFiles
+
+  def inputs =
+    # During execution, the generator needs access to both
+    # Python sources and the linker script template files
+    def generatorSources = sources here `.*\.(py|cfg)`
+    def dtsSources = topDTSFile, otherDTSFiles
+    generatorSources ++ dtsSources
+
+  def outputs = options.getOpenOCDConfigGeneratorOptionsOutputFile, Nil
+
+  def args =
+    def output =
+      "-o", options.getOpenOCDConfigGeneratorOptionsOutputFile,
+      Nil
+
+    def type_ =
+      "-b", options.getOpenOCDConfigGeneratorOptionsType,
+      Nil
+
+    def dts =
+      "-d", topDTSFile.getPathName,
+      Nil
+
+    def protocol =
+      "-p", options.getOpenOCDConfigGeneratorOptionsProtocol,
+      Nil
+
+    def tunnel =
+      match options.getOpenOCDConfigGeneratorOptionsTunnel
+        True = "-t", Nil
+        False = Nil
+
+    output ++ type_ ++ dts ++ protocol ++ tunnel
+
+  makePlan (pythonCommand "{generatorDir}/generate_openocdcfg.py" args) inputs
+  | addPlanRelativePath "PYTHONPATH" generatorDir
+  | addPythonRequirementsEnv generatorDir
+  | setPlanFnOutputs (\_ outputs)
+  | runJob
+
+# This allows the python virtualenv to be created prior to running a build
+# with `wake preinstall Unit`.
+publish preinstall = (pythonRequirementsInstaller generatorDir), Nil
+
+#########################################################################
+# installOpenOCDConfigGenerator allows wake flows to install the
+# OpenOCD configuration generator in customer deliveries and exclude all
+# content which  does not directly contribute to the generation of
+# customer BSP content.
+# It takes the following parameter
+#   - installPath: the path to install the generator in
+# For example, if you call `installOpenOCDConfigGenerator "scripts"`
+# the generator script will be found in
+#   scripts/openocdcfg-generator/generate_openocdcfg.py
+#########################################################################
+global target installOpenOCDConfigGenerator installPath =
+  def generatorSources =
+    source "{here}/README.md",
+    source "{here}/LICENSE",
+    source "{here}/generate_openocdcfg.py",
+    sources "{here}/templates" `.*\.cfg`
+
+  mkdir installPath,
+  map (installIn installPath) generatorSources

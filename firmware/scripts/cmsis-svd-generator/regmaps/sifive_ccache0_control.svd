@@ -1,0 +1,68 @@
+<registers>
+  <register>
+    <name>config</name>
+    <description>Information about the Cache Configuration</description>
+    <addressOffset>0x0</addressOffset>
+    <fields>
+      <field>
+        <name>banks</name>
+        <description>Number of banks in the cache</description>
+        <bitRange>[7:0]</bitRange>
+        <access>read-only</access>
+      </field>
+      <field>
+        <name>ways</name>
+        <description>Number of ways per bank</description>
+        <bitRange>[15:8]</bitRange>
+        <access>read-only</access>
+      </field>
+      <field>
+        <name>lgsets</name>
+        <description>Base-2 logarithm of the sets per bank</description>
+        <bitRange>[23:16]</bitRange>
+        <access>read-only</access>
+      </field>
+      <field>
+        <name>lgblockbytes</name>
+        <description>Base-2 logarithm of the bytes per cache block</description>
+        <bitRange>[31:24]</bitRange>
+        <access>read-only</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>wayenable</name>
+    <description>The index of the largest way which has been enabled. May only be increased.</description>
+    <addressOffset>0x8</addressOffset>
+  </register>
+  <register>
+    <name>l2perfevent0</name>
+    <description>The L2 performance event0 control register.</description>
+    <addressOffset>0x2000</addressOffset>
+  </register>
+  <register>
+    <name>l2perfevent1</name>
+    <description>The L2 performance event1 control register.</description>
+    <addressOffset>0x2008</addressOffset>
+  </register>
+  <register>
+    <name>l2clientfilter</name>
+    <description>The L2 Client Filterregister.</description>
+    <addressOffset>0x2800</addressOffset>
+  </register>
+  <register>
+    <name>l2pmcounter0</name>
+    <description>The L2 performance monitor counter0 register.</description>
+    <addressOffset>0x3000</addressOffset>
+  </register>
+  <register>
+    <name>l2pmcounter1</name>
+    <description>The L2 performance monitor counter1 register.</description>
+    <addressOffset>0x3008</addressOffset>
+  </register>
+  <register>
+    <name>l2pmcounter63</name>
+    <description>The L2 performance monitor counter63 register.</description>
+    <addressOffset>0x31F8</addressOffset>
+  </register>
+</registers>

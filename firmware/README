@@ -1,0 +1,23 @@
+1. Download sifive sdk
+    git clone --recursive https://github.com/sifive/freedom-e-sdk.git
+
+2. Download sifive toolchain
+    https://www.sifive.com/software, Down load Prebuilt RISC‑V GCC Toolchain and Emulator
+
+3. cd freedom-e-sdk-xxxxx/bsp, add cva6 bsp
+    you can copy sifive's bsp, then modify .dts .h according to cva6
+    attention: 1)modify clint address and plic address;
+               2)plic interrupt max priority is 7;
+               3)modify clock to 25MHz;
+               4)modify plic registers' address used for debug;
+               5)must modify metal.default.lds; 
+               6)must add your include dir to Makefile;
+               7)must generate .bin file;
+               8)use download_firmware.py to download firmware to memory;
+4. Create your own project use the forllow command:
+    make PROGRAM=hello TARGET=cva6 INCLUDE_METAL_SOURCES=1 STANDALONE_DEST=/path/to/desired/location standalone
+
+5. Set riscv toolchain dir: 
+    export RISCV_PATH=/path/to/toolchain/you/download
+
+6. chmod -R 777 xxx/  if you get permission denied error

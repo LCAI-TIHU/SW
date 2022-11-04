@@ -1,0 +1,88 @@
+<registers>
+  <register>
+    <name>control</name>
+    <description>Basic control register</description>
+    <addressOffset>0x0</addressOffset>
+    <fields>
+      <field>
+        <name>enable</name>
+        <description>Enable hardware prefetcher</description>
+        <bitRange>[0:0]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>disxpageoptm</name>
+        <description>Cross Page optimization disable</description>
+        <bitRange>[1:1]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>distance</name>
+        <description>Prefetch distance</description>
+        <bitRange>[7:2]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>maxallowdist</name>
+        <description>Maximum allowed distance</description>
+        <bitRange>[13:8]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>lineartoexpthrs</name>
+        <description>Linear to exponential threshold</description>
+        <bitRange>[19:14]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>ageoutenable</name>
+        <description>Ageout mechanism enable</description>
+        <bitRange>[20:20]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>numldtoageout</name>
+        <description>Number of non-matching loads to edge out an entry</description>
+        <bitRange>[27:21]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>xpageenable</name>
+        <description>Enable prefetches to cross pages</description>
+        <bitRange>[28:28]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>user</name>
+    <description>L2 users bits control register</description>
+    <addressOffset>0x4</addressOffset>
+    <fields>
+      <field>
+        <name>qfullnessthrs</name>
+        <description>Threshold number of Fullness to stop sending hits</description>
+        <bitRange>[3:0]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>hitcachethrs</name>
+        <description>Threshold number of CacheHits for evicting SPF entry</description>
+        <bitRange>[8:4]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>hitmshrthrs</name>
+        <description>Threshold number of MSHR hits for increasing SPF distance</description>
+        <bitRange>[12:9]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>window</name>
+        <description>Size of the comparison window for address matching</description>
+        <bitRange>[18:13]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+</registers>

@@ -1,0 +1,81 @@
+tuple ESDKSettingsGeneratorOptions =
+  global TopDTSFile:    Path
+  global OtherDTSFiles: List Path
+  global Type:          String
+  global OutputFile:    String
+
+# Instead of copying the script sources into build/{here}, we'll just
+# execute directly out of the package directory, since nothing gets
+# modified during execution.
+#
+# The virtualenv does get placed in build/{here} by
+# addPythonRequirementsEnv, along with a copy of requirements.txt
+def generatorDir = here
+
+#######################################################################
+# makeESDKSettingsGeneratorOptions takes the following parameters:
+#   - topDTSFile: The top-level Devicetree source file
+#   - otherDTSFiles: any other Devicetree source files included in the
+#                    hierarchy of Devicetree source files
+#   - type: One of {rtl, arty, qemu, hifive, spike, vc707}
+#   - outputFile: A string representing the path of the output file to
+#                 produce
+#######################################################################
+global def makeESDKSettingsGeneratorOptions topDTSFile otherDTSFiles type_ outputFile =
+  ESDKSettingsGeneratorOptions topDTSFile otherDTSFiles type_ outputFile
+
+global def runESDKSettingsGenerator options =
+  def topDTSFile = options.getESDKSettingsGeneratorOptionsTopDTSFile
+  def otherDTSFiles = options.getESDKSettingsGeneratorOptionsOtherDTSFiles
+
+  def inputs =
+    def generatorSources = sources here `.*\.py`
+    def dtsSources = topDTSFile, otherDTSFiles
+    generatorSources ++ dtsSources
+
+  def outputs = options.getESDKSettingsGeneratorOptionsOutputFile, Nil
+
+  def args =
+    def output =
+      "-o", options.getESDKSettingsGeneratorOptionsOutputFile,
+      Nil
+
+    def type_ =
+      "-t", options.getESDKSettingsGeneratorOptionsType,
+      Nil
+
+    def dts =
+      "-d", topDTSFile.getPathName,
+      Nil
+
+    output ++ type_ ++ dts
+
+  makePlan (pythonCommand "{generatorDir}/generate_settings.py" args) inputs
+  | addPlanRelativePath "PYTHONPATH" generatorDir
+  | addPythonRequirementsEnv generatorDir
+  | setPlanFnOutputs (\_ outputs)
+  | runJob
+
+# This allows the python virtualenv to be created prior to running a build
+# with `wake preinstall Unit`.
+publish preinstall = (pythonRequirementsInstaller generatorDir), Nil
+
+#########################################################################
+# installESDKSettingsGenerator allows wake flows to install the
+# settings generator in customer deliveries and exclude all content which
+# does not directly contribute to the generation of customer BSP content.
+# It takes the following parameter
+#   - installPath: the path to install the generator in
+# For example, if you call `installESDKSettingsGenerator "scripts"`
+# the generator script will be found in
+#   scripts/esdk-settings-generator/generate_settings.py
+#########################################################################
+global target installESDKSettingsGenerator installPath =
+  def generatorSources =
+    source "{here}/README.md",
+    source "{here}/LICENSE",
+    source "{here}/generate_settings.py",
+    Nil
+
+  mkdir installPath,
+  map (installIn installPath) generatorSources

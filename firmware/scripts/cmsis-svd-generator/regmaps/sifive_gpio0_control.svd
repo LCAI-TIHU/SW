@@ -1,0 +1,87 @@
+<registers>
+  <register>
+    <name>input_val</name>
+    <description>Pin value</description>
+    <addressOffset>0x0</addressOffset>
+  </register>
+  <register>
+    <name>input_en</name>
+    <description>Pin input enable</description>
+    <addressOffset>0x4</addressOffset>
+  </register>
+  <register>
+    <name>output_en</name>
+    <description>Pin output enable</description>
+    <addressOffset>0x8</addressOffset>
+  </register>
+  <register>
+    <name>output_val</name>
+    <description>Output value</description>
+    <addressOffset>0xC</addressOffset>
+  </register>
+  <register>
+    <name>pue</name>
+    <description>Internal pull-up enable</description>
+    <addressOffset>0x10</addressOffset>
+  </register>
+  <register>
+    <name>ds</name>
+    <description>Pin drive strength</description>
+    <addressOffset>0x14</addressOffset>
+  </register>
+  <register>
+    <name>rise_ie</name>
+    <description>Rise interrupt enable</description>
+    <addressOffset>0x18</addressOffset>
+  </register>
+  <register>
+    <name>rise_ip</name>
+    <description>Rise interrupt pending</description>
+    <addressOffset>0x1C</addressOffset>
+  </register>
+  <register>
+    <name>fall_ie</name>
+    <description>Fall interrupt enable</description>
+    <addressOffset>0x20</addressOffset>
+  </register>
+  <register>
+    <name>fall_ip</name>
+    <description>Fall interrupt pending</description>
+    <addressOffset>0x24</addressOffset>
+  </register>
+  <register>
+    <name>high_ie</name>
+    <description>High interrupt enable</description>
+    <addressOffset>0x28</addressOffset>
+  </register>
+  <register>
+    <name>high_ip</name>
+    <description>High interrupt pending</description>
+    <addressOffset>0x2C</addressOffset>
+  </register>
+  <register>
+    <name>low_ie</name>
+    <description>Low interrupt enable</description>
+    <addressOffset>0x30</addressOffset>
+  </register>
+  <register>
+    <name>low_ip</name>
+    <description>Low interrupt pending</description>
+    <addressOffset>0x34</addressOffset>
+  </register>
+  <register>
+    <name>iof_en</name>
+    <description>I/O function enable</description>
+    <addressOffset>0x38</addressOffset>
+  </register>
+  <register>
+    <name>iof_sel</name>
+    <description>I/O function select</description>
+    <addressOffset>0x3C</addressOffset>
+  </register>
+  <register>
+    <name>out_xor</name>
+    <description>Output XOR (invert)</description>
+    <addressOffset>0x40</addressOffset>
+  </register>
+</registers>

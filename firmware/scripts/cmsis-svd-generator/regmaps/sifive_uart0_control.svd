@@ -1,0 +1,135 @@
+<registers>
+  <register>
+    <name>txdata</name>
+    <description>Transmit data register</description>
+    <addressOffset>0x0</addressOffset>
+    <fields>
+      <field>
+        <name>data</name>
+        <description>Transmit data</description>
+        <bitRange>[7:0]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>full</name>
+        <description>Transmit FIFO full</description>
+        <bitRange>[31:31]</bitRange>
+        <access>read-only</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>rxdata</name>
+    <description>Receive data register</description>
+    <addressOffset>0x4</addressOffset>
+    <fields>
+      <field>
+        <name>data</name>
+        <description>Received data</description>
+        <bitRange>[7:0]</bitRange>
+        <access>read-only</access>
+      </field>
+      <field>
+        <name>empty</name>
+        <description>Receive FIFO empty</description>
+        <bitRange>[31:31]</bitRange>
+        <access>read-only</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>txctrl</name>
+    <description>Transmit control register</description>
+    <addressOffset>0x8</addressOffset>
+    <fields>
+      <field>
+        <name>txen</name>
+        <description>Transmit enable</description>
+        <bitRange>[0:0]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>nstop</name>
+        <description>Number of stop bits</description>
+        <bitRange>[1:1]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>txcnt</name>
+        <description>Transmit watermark level</description>
+        <bitRange>[18:16]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>rxctrl</name>
+    <description>Receive control register</description>
+    <addressOffset>0xC</addressOffset>
+    <fields>
+      <field>
+        <name>rxen</name>
+        <description>Receive enable</description>
+        <bitRange>[0:0]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>rxcnt</name>
+        <description>Receive watermark level</description>
+        <bitRange>[18:16]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>ie</name>
+    <description>UART interrupt enable</description>
+    <addressOffset>0x10</addressOffset>
+    <fields>
+      <field>
+        <name>txwm</name>
+        <description>Transmit watermark interrupt enable</description>
+        <bitRange>[0:0]</bitRange>
+        <access>read-write</access>
+      </field>
+      <field>
+        <name>rxwm</name>
+        <description>Receive watermark interrupt enable</description>
+        <bitRange>[1:1]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>ip</name>
+    <description>UART interrupt pending</description>
+    <addressOffset>0x14</addressOffset>
+    <fields>
+      <field>
+        <name>txwm</name>
+        <description>Transmit watermark interrupt pending</description>
+        <bitRange>[0:0]</bitRange>
+        <access>read-only</access>
+      </field>
+      <field>
+        <name>rxwm</name>
+        <description>Receive watermark interrupt pending</description>
+        <bitRange>[1:1]</bitRange>
+        <access>read-only</access>
+      </field>
+    </fields>
+  </register>
+  <register>
+    <name>div</name>
+    <description>Baud rate divisor</description>
+    <addressOffset>0x18</addressOffset>
+    <fields>
+      <field>
+        <name>div</name>
+        <description>Baud rate divisor.</description>
+        <bitRange>[15:0]</bitRange>
+        <access>read-write</access>
+      </field>
+    </fields>
+  </register>
+</registers>
