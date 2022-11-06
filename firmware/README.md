@@ -11,9 +11,16 @@ The workflow of TIHU is:
 
 # Compile and Download
 Riscv-gnu-toolchain should be downloaded to compile firmware.  
-` apt-get update && \
-    apt-get upgrade -y && \
-    apt-get install -y \
-    bzip2 \
-    rsync \
-    wget `
+** Set PATH before compile firmware, or you will get error like "/bin/sh: 1: riscv64-unknown-elf-gcc: not found" **  
+` sudo apt-get update && sudo apt-get upgrade -y && sudo apt-get install -y bzip2 rsync wget `  
+` cd xxx/SW && wget https://static.dev.sifive.com/dev-tools/freedom-tools/v2020.12/riscv64-unknown-elf-toolchain-10.2.0-2020.12.8-x86_64-linux-ubuntu14.tar.gz `   
+` tar xzf riscv64-unknown-elf-toolchain-10.2.0-2020.12.8-x86_64-linux-ubuntu14.tar.gz `  
+` export PATH=$(pwd)/riscv64-unknown-elf-toolchain-10.2.0-2020.12.8-x86_64-linux-ubuntu14/bin:$PATH `  
+` cd xxx/SW/firmware && make clean && make -j`
+
+Download firmware.bin to DDR or SRAM.  
+** Download address should be same with the address in link file. **  
+
+` cd xxx/SW/xdma/tests && source download_firmware.sh `  
+
+
