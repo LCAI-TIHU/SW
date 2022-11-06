@@ -8,7 +8,9 @@ The workflow of TIHU is:
 * RUNTIME submits task-list and address-list to TIHU, and raise PCIe interrupt to CPU;  
 * Firmware assigns computing tasks to CPU or DLA based on device type;  
 * Host interrupt will be raised when all tasks are completed;  
-<img src="../doc/firmware_workflow.png" width="400" height="400" alt="TIHU"/><br/>
+<div align=center>
+<img src="../doc/firmware_workflow.png" width="400" height="450" alt="TIHU"/><br/>
+</div>
 
 # Compile and Download
 Riscv-gnu-toolchain should be downloaded to compile firmware.  
