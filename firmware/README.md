@@ -9,7 +9,7 @@ The workflow of TIHU is:
 * Firmware assigns computing tasks to CPU or DLA based on device type;  
 * Host interrupt will be raised when all tasks are completed;  
 ![TIHU_structure](../doc/firmware_workflow.png)  
-
+<img src="../doc/firmware_workflow.png" width="200" height="200" alt="TIHU"/><br/>
 # Compile and Download
 Riscv-gnu-toolchain should be downloaded to compile firmware.  
 **Set PATH before compile firmware, or you will get error like "/bin/sh: 1: riscv64-unknown-elf-gcc: not found"**  
