@@ -2,7 +2,7 @@ TIHU FIRMWARE
 # Introduction
 TIHU runs in barematel mode, and is driven by firmware to complete computing tasks submitted by RUNTIME. TIHU is comprised of RISC-V cpu, nvdla, NoC bus, PCIe module, DDR, SRAM, bootROM, DMA and peripherals.  
 <div align=center>
-<img src="../doc/AIPU_structure.png" width="500" height="300" alt="TIHU"/><br/>
+<img src="../doc/AIPU_structure.png" width="600" height="300" alt="TIHU"/><br/>
 </div>
 
 The workflow of TIHU is:  
