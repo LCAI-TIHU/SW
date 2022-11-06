@@ -85,10 +85,7 @@
  */
 #define DEBUG_NETWORK_DATA		0
 
-#define pr_dump_stack(format, ...)
-#define dla_trace(format, ...)
-
-#define assert(condition)
+/* #define assert(condition) */
 
 #define RETURN(err) { return (err); }
 
@@ -122,6 +119,9 @@ do {								\
 	void debug_info(const char *format, ...);
 	//static inline void debug_info(const char *format, ...) {}
 #endif
+
+#define pr_dump_stack(format, ...)
+#define dla_trace(...) debug_trace(__VA_ARGS__)
 
 //#define OP_DEBUG
 #ifdef OP_DEBUG

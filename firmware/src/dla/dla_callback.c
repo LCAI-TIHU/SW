@@ -44,7 +44,7 @@
 #include "aipu_scu.h"
 //#include "opendla_2048_full.h"//glb test
 
-extern struct metal_timer aipu_timer0;
+extern struct aipu_timer aipu_timer0;
 extern struct metal_interrupt *global_intr;
 
 void *dla_memset(void *src, int ch, uint64_t len)
