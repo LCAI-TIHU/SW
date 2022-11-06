@@ -1,23 +1,19 @@
-1. Download sifive sdk
-    git clone --recursive https://github.com/sifive/freedom-e-sdk.git
+TIHU FIRMWARE
+# Introduction
+TIHU runs in barematel mode, and is driven by firmware to complete computing tasks submitted by RUNTIME. TIHU is comprised of RISC-V cpu, nvdla, NoC bus, PCIe module, DDR, SRAM, bootROM, DMA and peripherals.
 
-2. Download sifive toolchain
-    https://www.sifive.com/software, Down load Prebuilt RISC‑V GCC Toolchain and Emulator
+The workflow of TIHU is:
+    * Initialize CPU clock, serial, timer and interrupt;
+    * Wait for computing tasks submitted by RUNTIME;
+    * RUNTIME submits task-list and address-list to TIHU, and that will raise PCIe interrupt to CPU;
+    * Firmware assigns computing tasks to CPU or DLA based on device type;
+    * Host interrupt will be raised when all tasks are completed;
 
-3. cd freedom-e-sdk-xxxxx/bsp, add cva6 bsp
-    you can copy sifive's bsp, then modify .dts .h according to cva6
-    attention: 1)modify clint address and plic address;
-               2)plic interrupt max priority is 7;
-               3)modify clock to 25MHz;
-               4)modify plic registers' address used for debug;
-               5)must modify metal.default.lds; 
-               6)must add your include dir to Makefile;
-               7)must generate .bin file;
-               8)use download_firmware.py to download firmware to memory;
-4. Create your own project use the forllow command:
-    make PROGRAM=hello TARGET=cva6 INCLUDE_METAL_SOURCES=1 STANDALONE_DEST=/path/to/desired/location standalone
-
-5. Set riscv toolchain dir: 
-    export RISCV_PATH=/path/to/toolchain/you/download
-
-6. chmod -R 777 xxx/  if you get permission denied error
+# Compile and Download
+Riscv-gnu-toolchain should be downloaded to compile firmware.
+`<apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y \
+    bzip2 \
+    rsync \
+    wget>`
