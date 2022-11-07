@@ -1,27 +1,15 @@
 # LCAI-TIHU SOFTWARE
 
 ## Introduction
-TIHU is designed based on a variety of open source projects, including cva6 (https://github.com/openhwgroup/cva6), ara (https://github.com/pulp-platform/ara), nvlda (https://github.com/nvdla), xdma (https://github.com/Xilinx/dma_ip_drivers/tree/master/XDMA/linux-kernel) and TVM (https://github.com/apache/tvm), to explore the current AI open source ecology and accelerate the implementation of AI algorithms. In this project, we can explore RISC-V instruction set, deep-learning accelerator, AI compiler and runtime, AI algorithms and AI frameworks.
+TIHU is designed based on a variety of open source projects, including cva6 (https://github.com/openhwgroup/cva6), ara (https://github.com/pulp-platform/ara), nvlda (https://github.com/nvdla), xdma (https://github.com/Xilinx/dma_ip_drivers/tree/master/XDMA/linux-kernel) and TVM (https://github.com/apache/tvm), to explore the current AI open source ecology and accelerate the implementation of AI algorithms. In this project, we can explore RISC-V instruction set, deep-learning accelerator, AI compiler &  runtime, AI algorithms and AI frameworks.
 
-### TIHU hardware
-TIHU hardware is comprised of RISC-V cpu, nvdla, NoC bus, PCIe module, DDR, SRAM, bootROM, DMA and peripherals. Parameters:  
-* Support RISC-V instruction set: RV64gcv0p10;  
-* Nvdla config:  
-* Memory: DDR -- 2GB, SRAM -- 4MB, ROM -- 128KB;
-* SoC frequency: 20MHz;  
-* SoC systerm: baremetal;
-* Debug: uart;
-
-<div align=center>
-<img src="./doc/AIPU_structure.png" width="600" height="300" alt="TIHU"/><br/>
-</div>
-                                                                                                                                                                                                
-### TIHU software
-TIHU software is designed based on TVM.
+## TIHU software structure
+TIHU software include compiler, runtime, xdma driver and firmware.
 
 <div align=center>
 <img src="./doc/compiler_structure.png" width="600" height="300" alt="TIHU"/><br/>
 </div>
+
 
 ## Code structure
 
@@ -32,14 +20,38 @@ TIHU software is designed based on TVM.
 ├── README.md  
 └── LICENSE  
 
-## Build procedure
-1. Build without dockfile  
+## Build procedure on ubuntu  
 
-2. build with dockefile  
+1. Build compiler and runtime without dockfile   
+Install docker and then:  
+```
+sudo docker run -it --network=host -v /your/project/path/on/host:/your/project/path/on/docker -v /dev:/dev --privileged=true --name your_docker_name docker_image_name:version /bin/bash # run docker and load ubuntu image
+apt-get update
+apt-get install -y python3 python3-dev python3-setuptools python3-pip python3-venv python-scipy gcc libtinfo-dev zlib1g-dev build-essential cmake libedit-dev libxml2-dev llvm-dev libjpeg-turbo8-dev git python3-pip autoconf # install prerequisites
+pip3 install -U pip -i https://pypi.tuna.tsinghua.edu.cn/simple # update pip
+pip3 install numpy decorator attrs pytest scipy  opencv-python-headless tqdm pycocotools -i https://pypi.tuna.tsinghua.edu.cn/simple
+pip3 install tensorflow==2.6.1 -i https://pypi.tuna.tsinghua.edu.cn/simple  # install tensorflow
+git clone https://github.com/LCAI-TIHU/SW.git
+cd SW/compiler_runtime && source env.sh
+source clean.sh && source build.sh
 
-## Build FPGA
+```
+
+2. build compiler and runtime with dockefile   
+
+
 
 # Run reference design example
+
+There are some samples in xxx/SW/compiler_runtime/AIPU_demo, before run you should:   
+* Make sure the FPGA bitstream has been load, you can refer to HW project;  
+* Make sure firmware has been compiled and downloaded, you can refer to ./firmware README;  
+* Run docker and build compiler and runtime, make sure env.sh has been sourced;  
+```
+cd xxx/SW/compiler_runtime/AIPU_demo
+python3 from_tensorflow_quantize_lenet.py 2>&1 | tee lenet.log
+
+```   
 
 # Road Map   
 
