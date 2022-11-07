@@ -170,15 +170,15 @@ RISCV_ASFLAGS   += -march=$(RISCV_ARCH) -mabi=$(RISCV_ABI) -mcmodel=$(RISCV_CMOD
 # Prune unused functions and data
 ifeq ($(RISCV_SERIES),sifive-8-series)
 ifeq ($(PROGRAM),dhrystone)
-RISCV_CFLAGS   += -fno-function-sections -fno-data-sections
-RISCV_CXXFLAGS += -fno-function-sections -fno-data-sections
+RISCV_CFLAGS   += -fno-function-sections -fno-data-sections -Wno-address-of-packed-member
+RISCV_CXXFLAGS += -fno-function-sections -fno-data-sections -Wno-address-of-packed-member
 else
-RISCV_CFLAGS   += -ffunction-sections -fdata-sections
-RISCV_CXXFLAGS += -ffunction-sections -fdata-sections
+RISCV_CFLAGS   += -ffunction-sections -fdata-sections -Wno-address-of-packed-member
+RISCV_CXXFLAGS += -ffunction-sections -fdata-sections -Wno-address-of-packed-member
 endif
 else
-RISCV_CFLAGS   += -ffunction-sections -fdata-sections 
-RISCV_CXXFLAGS += -ffunction-sections -fdata-sections
+RISCV_CFLAGS   += -ffunction-sections -fdata-sections -Wno-address-of-packed-member
+RISCV_CXXFLAGS += -ffunction-sections -fdata-sections -Wno-address-of-packed-member
 endif
 # Include the Metal headers
 RISCV_CCASFLAGS += -I$(abspath $(BSP_DIR)/install/include/) -I$(abspath $(SRC_DIR))  -I$(abspath $(SRC_DIR)/dla/include/) -I$(abspath $(SRC_DIR)/include/)
@@ -380,33 +380,33 @@ SETTINGS_GENERATOR = scripts/esdk-settings-generator/generate_settings.py
 # This allows user changes to the devicetree in $(BSP_DIR)/design.dts to be
 # propagated through to the end application with a single invocation of Make
 
-$(BSP_DIR)/design.dts: $(BSP_DIR)/core.dts $(OVERLAY_GENERATOR)
-	$(MAKE) -f scripts/virtualenv.mk virtualenv
-	. $(FREEDOM_E_SDK_VENV_PATH)/bin/activate && $(OVERLAY_GENERATOR) --type $(TARGET) --output $@ --rename-include $(notdir $<) $<
+# $(BSP_DIR)/design.dts: $(BSP_DIR)/core.dts $(OVERLAY_GENERATOR)
+# 	$(MAKE) -f scripts/virtualenv.mk virtualenv
+# 	. $(FREEDOM_E_SDK_VENV_PATH)/bin/activate && $(OVERLAY_GENERATOR) --type $(TARGET) --output $@ --rename-include $(notdir $<) $<
 
-$(BSP_DIR)/metal.default.lds: $(BSP_DIR)/design.dts $(LDSCRIPT_GENERATOR)
-	$(MAKE) -f scripts/virtualenv.mk virtualenv
-	. $(FREEDOM_E_SDK_VENV_PATH)/bin/activate && $(LDSCRIPT_GENERATOR) -d $< -o $@
+# $(BSP_DIR)/metal.default.lds: $(BSP_DIR)/design.dts $(LDSCRIPT_GENERATOR)
+# 	$(MAKE) -f scripts/virtualenv.mk virtualenv
+# 	. $(FREEDOM_E_SDK_VENV_PATH)/bin/activate && $(LDSCRIPT_GENERATOR) -d $< -o $@
 
-$(BSP_DIR)/metal.ramrodata.lds: $(BSP_DIR)/design.dts $(LDSCRIPT_GENERATOR)
-	$(MAKE) -f scripts/virtualenv.mk virtualenv
-	. $(FREEDOM_E_SDK_VENV_PATH)/bin/activate && $(LDSCRIPT_GENERATOR) -d $< -o $@ --ramrodata
+# $(BSP_DIR)/metal.ramrodata.lds: $(BSP_DIR)/design.dts $(LDSCRIPT_GENERATOR)
+# 	$(MAKE) -f scripts/virtualenv.mk virtualenv
+# 	. $(FREEDOM_E_SDK_VENV_PATH)/bin/activate && $(LDSCRIPT_GENERATOR) -d $< -o $@ --ramrodata
 
-$(BSP_DIR)/metal.scratchpad.lds: $(BSP_DIR)/design.dts $(LDSCRIPT_GENERATOR)
-	$(MAKE) -f scripts/virtualenv.mk virtualenv
-	. $(FREEDOM_E_SDK_VENV_PATH)/bin/activate && $(LDSCRIPT_GENERATOR) -d $< -o $@ --scratchpad
+# $(BSP_DIR)/metal.scratchpad.lds: $(BSP_DIR)/design.dts $(LDSCRIPT_GENERATOR)
+# 	$(MAKE) -f scripts/virtualenv.mk virtualenv
+# 	. $(FREEDOM_E_SDK_VENV_PATH)/bin/activate && $(LDSCRIPT_GENERATOR) -d $< -o $@ --scratchpad
 
-$(BSP_DIR)/metal.freertos.lds: $(BSP_DIR)/design.dts $(LDSCRIPT_GENERATOR)
-	$(MAKE) -f scripts/virtualenv.mk virtualenv
-	. $(FREEDOM_E_SDK_VENV_PATH)/bin/activate && $(LDSCRIPT_GENERATOR) -d $< -o $@ --freertos
+# $(BSP_DIR)/metal.freertos.lds: $(BSP_DIR)/design.dts $(LDSCRIPT_GENERATOR)
+# 	$(MAKE) -f scripts/virtualenv.mk virtualenv
+# 	. $(FREEDOM_E_SDK_VENV_PATH)/bin/activate && $(LDSCRIPT_GENERATOR) -d $< -o $@ --freertos
 
-$(BSP_DIR)/design.svd: $(BSP_DIR)/design.dts $(CMSIS_SVD_GENERATOR)
-	$(MAKE) -f scripts/virtualenv.mk virtualenv
-	. $(FREEDOM_E_SDK_VENV_PATH)/bin/activate && $(CMSIS_SVD_GENERATOR) -d $< -o $@
+# $(BSP_DIR)/design.svd: $(BSP_DIR)/design.dts $(CMSIS_SVD_GENERATOR)
+# 	$(MAKE) -f scripts/virtualenv.mk virtualenv
+# 	. $(FREEDOM_E_SDK_VENV_PATH)/bin/activate && $(CMSIS_SVD_GENERATOR) -d $< -o $@
 
-$(BSP_DIR)/settings.mk: $(BSP_DIR)/design.dts $(SETTINGS_GENERATOR)
-	$(MAKE) -f scripts/virtualenv.mk virtualenv
-	. $(FREEDOM_E_SDK_VENV_PATH)/bin/activate && $(SETTINGS_GENERATOR) -d $< -o $@ -t $(TARGET)
+# $(BSP_DIR)/settings.mk: $(BSP_DIR)/design.dts $(SETTINGS_GENERATOR)
+# 	$(MAKE) -f scripts/virtualenv.mk virtualenv
+# 	. $(FREEDOM_E_SDK_VENV_PATH)/bin/activate && $(SETTINGS_GENERATOR) -d $< -o $@ -t $(TARGET)
 
 ifeq ($(findstring spike,$(TARGET)),spike)
 $(BSP_DIR)/spike_options.sh:
