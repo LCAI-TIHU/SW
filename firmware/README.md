@@ -1,4 +1,4 @@
-TIHU FIRMWARE
+# TIHU FIRMWARE
 # Introduction
 TIHU runs in barematel mode, and is driven by firmware to complete computing tasks submitted by RUNTIME. TIHU is comprised of RISC-V cpu, nvdla, NoC bus, PCIe module, DDR, SRAM, bootROM, DMA and peripherals.  
 Parameters:  
