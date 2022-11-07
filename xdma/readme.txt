@@ -19,7 +19,12 @@ Directory and file description:
 	provided kernel module driver and Xilinx PCIe DMA IP. This directory
 	also contains the following scripts and directories.
 
-	 - load_driver.sh:
+	- download_firmware.sh:
+		This script loads the firmware.bin into DDR or SRAM, and make 
+		the hardware work. If in docker or root mode, "sudo su" in this
+		script shoud be deleted.
+	
+	- load_driver.sh:
 		This script loads the kernel module and creates the necissary
 		kernel nodes used by the provided software.
 		The The kernel device nodes will be created under /dev/xdma*.
