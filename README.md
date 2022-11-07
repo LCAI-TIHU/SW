@@ -17,6 +17,7 @@ TIHU software include compiler, runtime, xdma driver and firmware.
 ├── doc: TIHU user's guide;  
 ├── firmware: TIHU SoC firmware;  
 ├── xdma: driver and firmware download tools;  
+├── docker: docker file
 ├── README.md  
 └── LICENSE  
 
