@@ -1,6 +1,6 @@
 # LCAI-TIHU SOFTWARE
 
-[![Build Status](https://ci.tlcpack.ai/buildStatus/icon?job=tvm/main)](https://ci.tlcpack.ai/job/tvm/job/main/)
+[![Build Status]
 
 ## Introduction
 
