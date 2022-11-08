@@ -13,7 +13,7 @@ Parameters:
 <img src="../doc/AIPU_structure.png" width="600" height="300" alt="TIHU"/><br/>
 </div>
 
-The workflow of TIHU is:  
+# The workflow of TIHU  
 * Initialize CPU clock, serial, timer and interrupt;    
 * Wait for computing tasks submitted by RUNTIME;  
 * RUNTIME submits task-list and address-list to TIHU, and raise PCIe interrupt to CPU;  
@@ -23,6 +23,18 @@ The workflow of TIHU is:
 <img src="../doc/firmware_workflow.png" width="500" height="450" alt="TIHU"/><br/>
 </div>
 
+# Code structure
+
+├── bsp, device tree, headers, link scripts, setting
+├── freedom-metal, sifive sdk
+├── scripts
+├── src, code source files
+├── Makefile
+├── debug.mk
+├── README.md
+├── release.mk
+└── requirements.txt
+
 # Compile and Download
 ## Out of docker   
 Riscv-gnu-toolchain should be downloaded to compile firmware.  
@@ -30,8 +42,8 @@ Riscv-gnu-toolchain should be downloaded to compile firmware.
 ``` 
 sudo apt-get update && sudo apt-get upgrade -y && sudo apt-get install -y bzip2 rsync wget   
 cd xxx/SW && wget https://static.dev.sifive.com/dev-tools/freedom-tools/v2020.12/riscv64-unknown-elf-toolchain-10.2.0-2020.12.8-x86_64-linux-ubuntu14.tar.gz    
-tar xzf riscv64-unknown-elf-toolchain-10.2.0-2020.12.8-x86_64-linux-ubuntu14.tar.gz `  
-export PATH=$(pwd)/riscv64-unknown-elf-toolchain-10.2.0-2020.12.8-x86_64-linux-ubuntu14/bin:$PATH `  
+tar xzf riscv64-unknown-elf-toolchain-10.2.0-2020.12.8-x86_64-linux-ubuntu14.tar.gz   
+export PATH=$(pwd)/riscv64-unknown-elf-toolchain-10.2.0-2020.12.8-x86_64-linux-ubuntu14/bin:$PATH   
 cd xxx/SW/firmware && make clean && make -j
 ```
 
@@ -46,6 +58,3 @@ First delet "sudo su" in download_firmware.sh, then:
 cd xxx/SW/firmware && make clean && make -j  
 cd xxx/SW/xdma/tests && source download_firmware.sh  
 ```
-
-
-
