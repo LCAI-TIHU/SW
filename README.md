@@ -10,7 +10,11 @@ Currently, TIHU only supports tensorflow. Pytorch will be supported very soon. S
 | num | category | CNN model | TIHU(int8) accuracy | llvm(float) accuracy|
 |---|----------------|-------|--------|------|
 | 1 | classification | LeNet | 0.9884 | 0.992|
-| 2 || ResNet50 | 0.748 | 0.752|
+| 2 | classification | ResNet50 | 0.748 | 0.752|
+| 3 | classification | MobileNetv2 | 0.71 | 0.72|
+| 4 | detection | YOLOv3 | 0.548 | 0.562|
+| 5 | NLP | bert-base | - | - |
+
 ## TIHU software structure and workflow
 TIHU software include compiler, runtime, xdma driver and firmware.
 
