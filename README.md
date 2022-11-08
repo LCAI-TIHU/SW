@@ -4,8 +4,13 @@
 
 TIHU is an AI computing platform based on RISC-V instruction set. It provides software stack and hardware stack, and is a complete set of solutions that can verify different AI frameworks and AI algorithms. TIHU is designed based on a variety of open source projects, including cva6 (https://github.com/openhwgroup/cva6), ara (https://github.com/pulp-platform/ara), nvlda (https://github.com/nvdla), xdma (https://github.com/Xilinx/dma_ip_drivers/tree/master/XDMA/linux-kernel) and TVM (https://github.com/apache/tvm), to explore the current AI open source ecology and accelerate the implementation of AI algorithms. In this project, we can explore RISC-V instruction set, deep-learning accelerator, AI compiler &  runtime, AI algorithms and AI frameworks.
 
-Currently, TIHU only supports tensorflow. Pytorch will be supported very soon. Several CNN models have been tested.
+Currently, TIHU only supports tensorflow. Pytorch will be supported very soon. Several CNN models have been tested on Inspur F37X card.
 
+<div align=center>
+<img src="./doc/F37X.png" width="300" height="600" alt="TIHU"/><br/>
+</div>
+
+The CNN models and their accuracy are:
 
 | num | category | CNN model | TIHU(int8) accuracy | llvm(float) accuracy|
 |---|----------------|-------|--------|------|
@@ -19,11 +24,11 @@ Currently, TIHU only supports tensorflow. Pytorch will be supported very soon. S
 TIHU software include compiler, runtime, xdma driver and firmware.
 
 <div align=center>
-<img src="./doc/compiler_structure.png" width="600" height="500" alt="TIHU"/><br/>
+<img src="./doc/compiler_structure.png" width="600" height="400" alt="TIHU"/><br/>
 </div>
 
 <div align=center>
-<img src="./doc/TIHU_workflow.png" width="600" height="400" alt="TIHU"/><br/>
+<img src="./doc/TIHU_workflow.png" width="600" height="500" alt="TIHU"/><br/>
 </div>
 
 ## Code structure
