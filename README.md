@@ -4,7 +4,8 @@
 
 TIHU is an AI computing platform based on RISC-V instruction set. It provides software stack and hardware stack, and is a complete set of solutions that can verify different AI frameworks and AI algorithms.   
 
-TIHU is designed based on a variety of open source projects, including cva6 (https://github.com/openhwgroup/cva6), ara (https://github.com/pulp-platform/ara), nvlda (https://github.com/nvdla), xdma (https://github.com/Xilinx/dma_ip_drivers/tree/master/XDMA/linux-kernel) and TVM (https://github.com/apache/tvm), to explore the current AI open source ecology and accelerate the implementation of AI algorithms. 
+TIHU is designed based on a variety of open source projects, including cva6 (https://github.com/openhwgroup/cva6), ara (https://github.com/pulp-platform/ara), nvlda (https://github.com/nvdla),
+xdma (https://github.com/Xilinx/dma_ip_drivers/tree/master/XDMA/linux-kernel) and TVM (https://github.com/apache/tvm), to explore the current AI open source ecology and accelerate the implementation of AI algorithms. 
 
 In this project, we can explore RISC-V instruction set, deep-learning accelerator, AI compiler &  runtime, AI algorithms and AI frameworks.
 
@@ -21,15 +22,35 @@ CNN models and accuracy
 | 1 | classification | LeNet | 0.9884 | 0.992|
 | 2 | classification | ResNet50 | 0.748 | 0.752|
 | 3 | classification | MobileNetv2 | 0.71 | 0.72|
-| 4 | detection | YOLOv3 | 0.548 | 0.562|
-| 5 | NLP | bert-base | - | - |
+| 4 | classification | VGG16 | - | - |
+| 5 | detection | YOLOv3 | 0.548 | 0.562|
+| 6 | NLP | bert-base | - | - |
 
-## TIHU software structure and workflow
+## TIHU software structure 
 TIHU software include compiler, runtime, xdma driver and firmware.
 
 <div align=center>
 <img src="./doc/compiler_structure.png" width="600" height="400" alt="TIHU"/><br/>
 </div>
+
+Compiler and runtime are designed based on TVM and integrate the compiler and runtime of nvdla. Compiler consists of parser, optimizer, codegen, operator libraries.
+CNN models are compiled into computing tasks with different device type and submitted to device by runtime. The host interacts with the device though PCIe drived by Xilinx xdma driver.
+
+Firmware consists of dla driver and cpu operators. Firmware workflow can be found in README of firmware. 
+
+At present, following operators are supported. Intrinsic operators will be done.
+
+| category | operators |
+|----------|-----------|
+| convolution | Conv, Transposed Conv, Dilated Conv, Spatially Separable Conv, Depthwise Separable Conv, Grouped Convolution, Flattened Conv |
+| activation | ReLU, ReLU6, P-ReLU, LeakyReLU, Sigmoid |
+| fusion | CBR(Conv + BN + Relu), CB(Conv + BN) |
+| pool | Max Pooling, Average Pooling, Upsample |
+| dense | matrix multiplication, FC |
+| Eltwise | Elemet-wise |
+| other | Softmax, BatchNorm, Add, multiply, power, slice, reshape, concate, expf, mean, etc. |
+
+## TIHU software workflow
 
 <div align=center>
 <img src="./doc/TIHU_workflow.png" width="600" height="500" alt="TIHU"/><br/>
