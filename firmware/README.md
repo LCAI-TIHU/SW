@@ -25,15 +25,15 @@ Parameters:
 
 # Code structure
 
-├── bsp, device tree, headers, link scripts, setting
-├── freedom-metal, sifive sdk
-├── scripts
-├── src, code source files
-├── Makefile
-├── debug.mk
-├── README.md
-├── release.mk
-└── requirements.txt
+├── bsp, device tree, headers, link scripts, setting  
+├── freedom-metal, sifive sdk  
+├── scripts  
+├── src, code source files  
+├── Makefile  
+├── debug.mk  
+├── README.md  
+├── release.mk  
+└── requirements.txt  
 
 # Compile and Download
 ## Out of docker   
