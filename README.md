@@ -1,7 +1,5 @@
 # LCAI-TIHU SOFTWARE
 
-[![Build Status]
-
 ## Introduction
 
 TIHU is an AI computing platform based on RISC-V instruction set. It provides software stack and hardware stack, and is a complete set of solutions that can verify different AI frameworks and AI algorithms.   
