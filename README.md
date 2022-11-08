@@ -10,8 +10,8 @@ Currently, TIHU only supports tensorflow. Pytorch will be supported very soon. S
 <img src="./doc/F37X.png" width="300" height="600" alt="TIHU"/><br/>
 </div>
 
-The CNN models and their accuracy are:
-
+    
+CNN models and accuracy  
 | num | category | CNN model | TIHU(int8) accuracy | llvm(float) accuracy|
 |---|----------------|-------|--------|------|
 | 1 | classification | LeNet | 0.9884 | 0.992|
