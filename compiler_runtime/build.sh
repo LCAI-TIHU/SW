@@ -1,7 +1,7 @@
 rm -r build
 # build nvdla umd
-pushd 3rdparty/sw/umd/ && source auto.sh
-cd external && source protobuf_build.sh
+pushd 3rdparty/sw/umd/external && source protobuf_build.sh
+cd .. && make clean && source auto.sh
 popd
 # build tvm
 mkdir build
