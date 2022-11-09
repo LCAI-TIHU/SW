@@ -84,7 +84,15 @@ source clean.sh && source build.sh
 ```
 
 2. build compiler and runtime with dockefile   
+```
+git clone https://github.com/LCAI-TIHU/SW.git
+cd SW/docker && sudo docker build -t tihu_software:v1 .
+sudo docker run -it --network=host -v /your/SW/path/:/workspace -v /dev:/dev --privileged=true --name tihu_software tihu_software:v1 /bin/bash
+cd /workspace/compiler_runtime
+source build.sh 
+source env.sh
 
+```
 
 
 # Run reference design example
