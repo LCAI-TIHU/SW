@@ -22,7 +22,7 @@ CNN models and accuracy
 | 1 | classification | LeNet | 0.9884 | 0.992|
 | 2 | classification | ResNet50 | 0.755 | 0.752|
 | 3 | classification | MobileNetv2 | 0.71 | 0.72|
-| 4 | classification | VGG16 | - | - |
+| 4 | classification | VGG16 | 0.627 | 0.629 |
 | 5 | detection | YOLOv3 | 0.548 | 0.562|
 | 6 | NLP | bert-base | - | - |
 
