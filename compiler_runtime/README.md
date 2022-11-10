@@ -16,7 +16,7 @@
 <!--- under the License. -->
 
 # TIHU Open Deep Learning Compiler Stack  
-_based on tvm_  
+_Based on tvm_  
 
 [Documentation](https://tvm.apache.org/docs) |
 [Contributors](CONTRIBUTORS.md) |
@@ -30,19 +30,18 @@ Apache TVM is a compiler stack for deep learning systems. It is designed to clos
 productivity-focused deep learning frameworks, and the performance- and efficiency-focused hardware backends.
 TVM works with deep learning frameworks to provide end to end compilation to different backends.
 
+TIHU compiler stack integrates the nvdla compiler and runtime into tvm, and necessary modifications are made to
+improve the efficiency of hardware computing.
+
+# What we have done
+
+<div align=center>
+<img src="../doc/compiler_structure.png" width="600" height="400" alt="TIHU"/><br/>
+</div>
+
+
+# Whate will be done
+
 License
 -------
 © Contributors Licensed under an [Apache-2.0](LICENSE) license.
-
-Contribute to TVM
------------------
-TVM adopts apache committer model, we aim to create an open source project that is maintained and owned by the community.
-Check out the [Contributor Guide](https://tvm.apache.org/docs/contribute/).
-
-Acknowledgement
----------------
-We learned a lot from the following projects when building TVM.
-- [Halide](https://github.com/halide/Halide): Part of TVM's TIR and arithmetic simplification module
-  originates from Halide. We also learned and adapted some part of lowering pipeline from Halide.
-- [Loopy](https://github.com/inducer/loopy): use of integer set analysis and its loop transformation primitives.
-- [Theano](https://github.com/Theano/Theano): the design inspiration of symbolic scan operator for recurrence.
