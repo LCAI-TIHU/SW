@@ -102,8 +102,8 @@ There are some samples in xxx/SW/compiler_runtime/AIPU_demo, before run you shou
 * Run docker and build compiler and runtime, make sure env.sh has been sourced;  
 ```
 mkdir -p /workspace/mnist && cd /workspace/mnist
-wget http://yann.lecun.com/exdb/mnist/t10k-images-idx3-ubyte.gz && tar xzf t10k-images-idx3-ubyte.gz
-wget http://yann.lecun.com/exdb/mnist/t10k-labels-idx1-ubyte.gz && tar xzf t10k-labels-idx1-ubyte.gz
+wget http://yann.lecun.com/exdb/mnist/t10k-images-idx3-ubyte.gz && gunzip t10k-images-idx3-ubyte.gz
+wget http://yann.lecun.com/exdb/mnist/t10k-labels-idx1-ubyte.gz && gunzip t10k-labels-idx1-ubyte.gz
 mkdir -p /workspace/tfmodel && cd /workspace/tfmodel
 cp /workspace/SW/compiler_runtime/AIPU_demo/lenet_test/frozen_lenet_3.pb .
 mkdir -p /worksapce/testimage && cd /worksapce/testimage
