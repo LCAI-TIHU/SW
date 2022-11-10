@@ -16,8 +16,8 @@
 <!--- under the License. -->
 
 # TIHU Open Deep Learning Compiler Stack  
-_based on tvm_
-==============================================
+_based on tvm_  
+
 [Documentation](https://tvm.apache.org/docs) |
 [Contributors](CONTRIBUTORS.md) |
 [Community](https://tvm.apache.org/community) |
