@@ -48,7 +48,7 @@ At present, following operators are supported. Intrinsic operators will be done.
 | pool | Max Pooling, Average Pooling, Upsample |
 | dense | matrix multiplication, FC |
 | Eltwise | Elemet-wise |
-| other | Softmax, BatchNorm, Add, multiply, power, slice, reshape, concate, expf, mean, etc. |
+| other | Softmax, BatchNorm, Add, sub, div, multiply, power, slice, reshape, concate, expf, tanh, mean, cast, transpose, take, one_hot, expand, dense, batch_matmul, squeeze, resize, reduce, split, pool2D, etc. |
 
 ## TIHU software workflow
 
