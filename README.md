@@ -48,7 +48,7 @@ At present, following operators are supported. Intrinsic operators will be done.
 | pool | Max Pooling, Average Pooling, Upsample |
 | dense | matrix multiplication, FC |
 | Eltwise | Elemet-wise |
-| other | Softmax, BatchNorm, Add, multiply, power, slice, reshape, concate, expf, mean, etc. |
+| other | Softmax, BatchNorm, Add, sub, div, multiply, power, slice, reshape, concate, expf, tanh, mean, cast, transpose, take, one_hot, expand, dense, batch_matmul, squeeze, resize, reduce, split, pool2D, etc. |
 
 ## TIHU software workflow
 
@@ -112,6 +112,11 @@ cd /workspace/SW/compiler_runtime/AIPU_demo
 python3 from_tensorflow_quantize_lenet.py 2>&1 | tee lenet.log
 
 ```   
+This photo is the result of yolov3.
+
+<div align=center>
+<img src="./doc/yolov3.jpg" width="400" height="400" alt="TIHU"/><br/>
+</div>
 
 # Road Map   
 
