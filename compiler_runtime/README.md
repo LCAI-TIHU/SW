@@ -43,7 +43,7 @@ Based on TVM [BYOC](https://tvm.apache.org/docs/dev/how_to/relay_bring_your_own_
 we developed specific memory plan and operator format for our backend, for MAC unit, we convert tvm relay IR to NVDLA compiler's network, for riscv
 unit, we transport tvm relay operators' information to manually implemented operators library.
 
-# Whate will be done
+# What will be done
 
 Right now, our backend can't cooperate with other backends, we will make some changes in runtime to add this feature. Next we will explore other codegen strategy
 for riscv unit, since it is a general computing device, we may use tvm's llvm codegen and auto tune to get better performance.
