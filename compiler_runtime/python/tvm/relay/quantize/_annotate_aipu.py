@@ -15,6 +15,13 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=unused-argument,inconsistent-return-statements
+
+#
+# Inspur.
+# This is a new or modified file.
+#
+
+
 """Internal module for registering attribute for annotation."""
 import warnings
 from tvm import topi
