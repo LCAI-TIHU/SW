@@ -15,12 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=unused-argument,inconsistent-return-statements
-
-#
-# Inspur.
-# This is a new or modified file.
-#
-
 """Internal module for registering attribute for annotation."""
 import warnings
 from tvm import topi
@@ -34,7 +28,6 @@ from .quantize import QAnnotateKind, current_qconfig, quantize_context
 from .quantize import _forward_op
 from ...relay.op.strategy.generic import is_depthwise_conv2d
 
-if_prequantize_weight = False
 
 @_op.register_compute("relay.op.annotation.simulated_quantize")
 def simulated_quantize_compute(attrs, inputs, out_type):
@@ -188,13 +181,11 @@ def conv2d_rewrite(ref_call, new_args, ctx):
         lhs_expr = attach_simulated_quantize(lhs_expr, QAnnotateKind.INPUT)
 
     assert rhs_kind is None
-    # AIPU. This modification is to test the extended conv for NVDLA.
-    if if_prequantize_weight:
-        axis = -1
-        if ref_call.attrs["groups"] == ref_call.attrs["channels"] and ref_call.attrs["groups"] != 1:
-            axis = 2
-        rhs_expr = attach_simulated_quantize(rhs_expr, QAnnotateKind.WEIGHT, True, "round", axis)
-    #
+    axis = -1
+    if ref_call.attrs["groups"] == ref_call.attrs["channels"] and ref_call.attrs["groups"] != 1:
+        axis = 2
+    rhs_expr = attach_simulated_quantize(rhs_expr, QAnnotateKind.WEIGHT, True, "round", axis)
+
 
     expr = _forward_op(ref_call, [lhs_expr, rhs_expr])
 
@@ -234,10 +225,9 @@ def dense_rewrite(ref_call, new_args, ctx):
     if quantize_context().check_to_skip(ref_call):
         return None
 
-    if new_args[1]._checked_type_ is not None:
-        if list(new_args[1].checked_type.shape) == [768, 2]: #  or list(new_args[1].checked_type.shape) == [2, 768]: # TODO: bert need (first and last dense)
-            print("pass1")
-            return None
+    if list(new_args[1].checked_type.shape) == [768, 2]: #  or list(new_args[1].checked_type.shape) == [2, 768]: # TODO: bert need (first and last dense)
+        print("pass1")
+        return None
 
     lhs_expr, lhs_kind = _get_expr_kind(new_args[0])
     rhs_expr, rhs_kind = _get_expr_kind(new_args[1])
@@ -246,11 +236,7 @@ def dense_rewrite(ref_call, new_args, ctx):
         lhs_expr = attach_simulated_quantize(lhs_expr, QAnnotateKind.INPUT)
 
     assert rhs_kind is None
-    # AIPU. This modification is to test the extended conv for NVDLA.
-    if if_prequantize_weight:
-        rhs_expr = attach_simulated_quantize(rhs_expr, QAnnotateKind.WEIGHT, axis=0)
-    #rhs_expr = attach_simulated_quantize(rhs_expr, QAnnotateKind.INPUT, axis=0)
-    #
+    rhs_expr = attach_simulated_quantize(rhs_expr, QAnnotateKind.WEIGHT, axis=0)
 
     expr = _forward_op(ref_call, [lhs_expr, rhs_expr])
 
@@ -295,7 +281,7 @@ def add_rewrite(ref_call, new_args, ctx):
     if lhs_kind is None and rhs_kind is None:
         # trivial case
         return None
-    
+
     if lhs_kind is None and rhs_kind is not None:
         # quantize lhs to INPUT field if it is normal expression
         assert rhs_kind in [QAnnotateKind.INPUT, QAnnotateKind.ACTIVATION]
@@ -308,12 +294,7 @@ def add_rewrite(ref_call, new_args, ctx):
             # - introduced by batch_norm: add(out, const)
             rhs_expr = attach_simulated_quantize(rhs_expr, QAnnotateKind.WEIGHT)
         else:
-            # TODO: This is only an ad hoc approach to deal with the bug for the node "bert/encoder/layer_0/intermediate/dense/add" in bert-base model
-            if rhs_expr.op == tvm.ir.op.Op.get("multiply"):
-                return _forward_op(ref_call, [lhs_expr, rhs_expr])
-            else:
-                rhs_expr = attach_simulated_quantize(rhs_expr, QAnnotateKind.INPUT)
-            ##
+            rhs_expr = attach_simulated_quantize(rhs_expr, QAnnotateKind.INPUT)
         expr = _forward_op(ref_call, [lhs_expr, rhs_expr])
         return QAnnotateExpr(expr, QAnnotateKind.ACTIVATION)
 

@@ -15,12 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=unused-argument, not-context-manager
-
-#
-# Inspur.
-# This is a new or modified file.
-#
-
 """Automatic quantization toolkit."""
 import tvm.ir
 import tvm
