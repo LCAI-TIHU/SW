@@ -105,7 +105,7 @@ mkdir -p /workspace/mnist && cd /workspace/mnist
 wget http://yann.lecun.com/exdb/mnist/t10k-images-idx3-ubyte.gz && gunzip t10k-images-idx3-ubyte.gz
 wget http://yann.lecun.com/exdb/mnist/t10k-labels-idx1-ubyte.gz && gunzip t10k-labels-idx1-ubyte.gz
 mkdir -p /workspace/tfmodel && cd /workspace/tfmodel
-cp /workspace/SW/compiler_runtime/AIPU_demo/lenet_test/frozen_lenet_3.pb .
+cp /workspace/SW/compiler_runtime/AIPU_demo/lenet_test/frozen_lenet_3.pb ./
 mkdir -p /worksapce/testimage && cd /worksapce/testimage
 cp /workspace/SW/compiler_runtime/AIPU_demo/lenet_test/00000_7.jpg ./
 cd /workspace/SW/compiler_runtime/AIPU_demo
