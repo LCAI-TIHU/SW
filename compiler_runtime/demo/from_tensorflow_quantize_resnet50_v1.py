@@ -25,6 +25,7 @@ Please refer to https://www.tensorflow.org/install
 """
 
 # Tensorflow imports
+from re import T
 import tensorflow as tf
 
 import os
@@ -46,25 +47,25 @@ except ImportError:
 import tvm.relay.testing.tf as tf_testing
 from tvm.contrib import graph_executor
 
-from utils.inception_preprocessing import preprocess_image # mobilenet-v2
+from utils.vgg_preprocessing import preprocess_image # resnet50-v1
 
 import pdb
 print(f'Python: {os.getpid()}')
-# pdb.set_trace()
 
-image_label_path = "/workspace/imagenet/val.txt"
-image_base = "/workspace/imagenet/val"
-model_path = "/workspace/tfmodel/densenet.pb"
+image_path = "/path/image_dir"
+label_path = "/path/image_dir"
+model_path = "/path/model_file"
 layout = "NHWC"
-label_offset = 1
+label_offset = 0
 output_number = 1000
 batch_size = 1
-total = 10000
-calibration_samples = 10
+total = 1000
+calibration_samples = 1000
+weight_scale="channel_max"
+AIPU_per_channel=tvm.get_global_func("AIPU_config_quantization_PER_FILTER")
 
-with open(image_label_path) as f:
+with open(label_path) as f:
     lines_table = f.readlines()
-
 
 ###############################################################################
 # The calibration dataset should be an iterable object. We define the
@@ -82,19 +83,19 @@ def calibrate_dataset():
 
     return calib_data
 
-def quantize(mod, params, target, data_aware, do_simulation):
+def quantize(mod, params, target, weight_scale, data_aware, do_simulation=True):
     if data_aware:
-        with relay.quantize.qconfig(target=target, calibrate_mode="kl_divergence", weight_scale="max", skip_conv_layers=[], skip_dense_layer=False, do_simulation=do_simulation): #, dtype_input="uint8", debug_enabled_ops=["nn.conv2d"], calibrate_chunk_by=16
+        with relay.quantize.qconfig(target=target, calibrate_mode="kl_divergence", weight_scale=weight_scale, skip_conv_layers=[], do_simulation=do_simulation): #, dtype_input="uint8", debug_enabled_ops=["nn.conv2d"], calibrate_chunk_by=16
             mod = relay.quantize.quantize(mod, params, dataset=calibrate_dataset())
     else:
-        with relay.quantize.qconfig(target=target, calibrate_mode="global_scale", global_scale=8.0):
+        with relay.quantize.qconfig(calibrate_mode="global_scale", global_scale=8.0):
             mod = relay.quantize.quantize(mod, params)
     return mod
 
 
 def gen_data(i):
     line_table = lines_table[i].split()
-    image_path = os.path.join(image_base, line_table[0])
+    image_path = os.path.join(image_path, line_table[0])
     image_file = tf_compat_v1.gfile.FastGFile(image_path, 'rb')
     image_raw_data = image_file.read()
     image_file.close()
@@ -130,7 +131,7 @@ def create_graph(model_path):
         graph_def = tf_testing.ProcessGraphDefParam(graph_def)
         # Add shapes to the graph.
         with tf_compat_v1.Session() as sess:
-            graph_def = tf_testing.AddShapesToGraphDef(sess, "densenet121/predictions/Softmax") #  densenet121/conv2_block3_1_relu/Relu
+            graph_def = tf_testing.AddShapesToGraphDef(sess, "resnet_v1_50/predictions/Softmax")
 
     data,_ = gen_data(0)
     data = np.expand_dims(data, axis = 0)
@@ -143,22 +144,22 @@ def create_graph(model_path):
 
 
 def run_test(lib, origin_shape=None):
-    image = cv2.imread("/workspace/testimage/crop-230.jpg")
+    image = cv2.imread("/path/image_file")
     image = cv2.resize(image,(224, 224))
-    image = image / 128.0 - 1.0
+    image = np.round((image / 128.0 - 1.0) * 127.0)
     image = np.expand_dims(image, axis=0)
 
-    m = graph_executor.GraphModule(lib["default"](dev))
     global target
     if target == "aipu":
-        image = np.round(image / 0.00787323)
+        image = np.round(image / 1.18713)
         image = np.clip(image, -127, 127)
-        image = np.expand_dims(image, axis=0)
+
+    m = graph_executor.GraphModule(lib["default"](dev))
+    if target == "aipu":
         m.set_input("input", tvm.nd.array(image.astype("int8"))) # set inputs
         m.run() # execute
         tvm_output = m.get_output(0, tvm.nd.empty(origin_shape)).asnumpy() # get outputs
     else:
-        image = np.expand_dims(image, axis=0)
         m.set_input("input", tvm.nd.array(image.astype("float32"))) # set inputs
         m.run() # execute
         tvm_output = m.get_output(0).asnumpy() # get outputs
@@ -170,9 +171,9 @@ def run_inference(lib, origin_shape=None):
     top1_cnt = 0
     m = graph_executor.GraphModule(lib["default"](dev)) 
     global target
-    for i in range(total):
+    for i in range(0,total,1):
         line_table = lines_table[i].split()
-        image_path = os.path.join(image_base, line_table[0])
+        image_path = os.path.join(image_path, line_table[0])
         image_file = tf_compat_v1.gfile.FastGFile(image_path, 'rb')
         image_raw_data = image_file.read()
         image_file.close()
@@ -181,17 +182,19 @@ def run_inference(lib, origin_shape=None):
         image = preprocess_image(image, 224, 224, is_training=False)
 
         image = tf.keras.preprocessing.image.img_to_array(image)
+        image = image[np.newaxis, ...]
         label = int(line_table[1]) + label_offset
 
         if target == "aipu":
-            image = np.round(image / 0.00787323)
+            image = np.round(image / 1.18713)
             image = np.clip(image, -127, 127)
-            image = np.expand_dims(image, axis=0)
+        # image = np.expand_dims(image, axis=0)
+
+        if target == "aipu":
             m.set_input("input", tvm.nd.array(image.astype("int8"))) # set inputs
             m.run() # execute
             tvm_output = m.get_output(0, tvm.nd.empty(origin_shape)).asnumpy() # get outputs
         else:
-            image = np.expand_dims(image, axis=0)
             m.set_input("input", tvm.nd.array(image.astype("float32"))) # set inputs
             m.run() # execute
             tvm_output = m.get_output(0).asnumpy() # get outputs
@@ -204,56 +207,38 @@ def run_inference(lib, origin_shape=None):
     return tvm_output
 
 if __name__ == '__main__':
-    mod, params = create_graph(model_path)
-    print("-------------original model--------------")
-    print(mod["main"].astext(show_meta_data=False))
 
+    # Ceate Relay graph
+    mod, params = create_graph(model_path)
+
+    # FP32 Inferrence
     target = "llvm"
     dev = tvm.device(target, 0)
     with tvm.transform.PassContext(opt_level=3):
         lib = relay.build(mod, target, params=params)
     out_float = run_test(lib)
     origin_shape = np.array(out_float.shape)
-    print('*'*100, origin_shape)
 
-    # mod_quantized = quantize(mod, params, data_aware=True, do_simulation=True)
-    # print("-------------mod_quantized model--------------")
-    # print(mod_quantized["main"].astext(show_meta_data=False))
-    # target = "llvm"
-    # dev = tvm.device(target, 0)
-    # with tvm.transform.PassContext(opt_level=3):
-    #     lib = relay.build(mod_quantized, target, params=params)
-    # out_tvm_int8 = run_test(lib, origin_shape)
+    # TVM Quantize
+    mod_quantized = quantize(mod, params, target, weight_scale, data_aware=True, do_simulation=True)  # do_simulation=False pad aipu not compatible wihe tvm 
+    with tvm.transform.PassContext(opt_level=3):
+        lib = relay.build(mod_quantized, target, params=params)
+    out_tvm_int8 = run_test(lib)
 
-    # mod_quantized_path = 'mod_quantized_mobilenet_v2.json'
-    # if not os.path.exists(mod_quantized_path):
-    #     mod_quantized = quantize(mod, params, data_aware=True)
-    #     print("-------------mod_quantized model--------------")
-    #     print(mod_quantized["main"].astext(show_meta_data=False))
-    #     json_str = tvm.ir.save_json(mod_quantized)
-    #     json_data = json.loads(json_str)
-    #     with open(mod_quantized_path, 'w') as f:
-    #         json.dump(json_data, f)
-    # else:
-    #     with open(mod_quantized_path, 'r') as f:
-    #         data = json.load(f)
-    #     json_data = json.dumps(data)
-    #     mod_quantized = tvm.ir.load_json(json_data)
-    #     print("-------------mod_quantized model--------------")
-    #     print(mod_quantized["main"].astext(show_meta_data=False))
-    target = "llvm"
-    mod_quantized = quantize(mod, params, target, data_aware=True, do_simulation=True)
-    print("-------------mod_quantized model--------------")
-    print(mod_quantized["main"].astext(show_meta_data=False))
-
-    target = "llvm"
+    # AIPU Quantize   
+    target="aipu"
+    if (weight_scale == "channel_max"):
+        AIPU_per_channel(True)
+    else: 
+        AIPU_per_channel(False)
+    mod_quantized = quantize(mod, params, target, weight_scale, data_aware=True, do_simulation=True)
     dev = tvm.device(target, 0)
     with tvm.transform.PassContext(opt_level=3):
         lib = relay.build(mod_quantized, target, params=params)
+    aipu_output = run_test(lib, origin_shape)
+    run_inference(lib, origin_shape)
 
-    out_aipu_int8 = run_test(lib, origin_shape)
-    # # run_inference(lib)
+    # Finish
+    print("ResNet inferrence done !!!")
 
-    # print('AIPU error rate: ', np.sum(np.abs(out_float - out_aipu_int8)) / np.sum(np.abs(out_float)))
-    # print('tvm error rate: ', np.sum(np.abs(out_float - out_tvm_int8)) / np.sum(np.abs(out_float)))
 

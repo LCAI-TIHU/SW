@@ -21,7 +21,6 @@ from __future__ import absolute_import as _abs
 from .quantize import *
 from ._partition import register_partition_function
 from ._annotate import register_annotate_function
-from .calibdata import gen_calibdata
 
 from ._partition_aipu import register_aipu_partition_function
 from ._annotate_aipu import register_aipu_annotate_function
