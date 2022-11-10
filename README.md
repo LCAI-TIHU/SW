@@ -101,11 +101,13 @@ There are some samples in xxx/SW/compiler_runtime/AIPU_demo, before run you shou
 * Make sure firmware has been compiled and downloaded, you can refer to ./firmware README;  
 * Run docker and build compiler and runtime, make sure env.sh has been sourced;  
 ```
-cd /workspace
-mkdir mnist && cd mnist
+mkdir -p /workspace/mnist && cd /workspace/mnist
 wget http://yann.lecun.com/exdb/mnist/t10k-images-idx3-ubyte.gz && tar xzf t10k-images-idx3-ubyte.gz
 wget http://yann.lecun.com/exdb/mnist/t10k-labels-idx1-ubyte.gz && tar xzf t10k-labels-idx1-ubyte.gz
-TODO how to get frozen_lenet_3.pb
+mkdir -p /workspace/tfmodel && cd /workspace/tfmodel
+cp /workspace/SW/compiler_runtime/AIPU_demo/lenet_test/frozen_lenet_3.pb .
+mkdir -p /worksapce/testimage && cd /worksapce/testimage
+cp /workspace/SW/compiler_runtime/AIPU_demo/lenet_test/00000_7.jpg ./
 cd /workspace/SW/compiler_runtime/AIPU_demo
 python3 from_tensorflow_quantize_lenet.py 2>&1 | tee lenet.log
 
