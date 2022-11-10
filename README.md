@@ -112,6 +112,11 @@ cd /workspace/SW/compiler_runtime/AIPU_demo
 python3 from_tensorflow_quantize_lenet.py 2>&1 | tee lenet.log
 
 ```   
+This photo is the result of yolov3.
+
+<div align=center>
+<img src="./doc/yolov3.jpg" width="400" height="400" alt="TIHU"/><br/>
+</div>
 
 # Road Map   
 
