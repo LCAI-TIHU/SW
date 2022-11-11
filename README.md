@@ -2,7 +2,8 @@
 
 ## Introduction
 
-TIHU is an AI computing development platform based on RISC-V instruction set. It provides software stack and hardware, and is a complete set of solutions that can verify different AI frameworks and AI algorithms.   It can also be used to explore the current AI open source ecology, such as RISC-V instruction set, deep-learning accelerator, AI compiler &  runtime, AI algorithms and frameworks.   TIHU will accelerate the implementation of your AI algorithms.
+TIHU is an AI computing development platform based on RISC-V instruction set. It provides software stack and hardware, and is a complete set of solutions that can verify different AI frameworks and AI algorithms.   It can also be used to explore the current AI open source ecology, such as RISC-V instruction set, deep-learning accelerator, AI compiler &  runtime, AI algorithms and frameworks.   
+TIHU will accelerate the implementation of your AI algorithms.
 
 Currently, TIHU only supports tensorflow. Pytorch will be supported very soon. Several CNN models have been tested on Inspur F37X card, as shown below. 
 
@@ -10,7 +11,7 @@ Currently, TIHU only supports tensorflow. Pytorch will be supported very soon. S
 <img src="./doc/F37X.png" width="300" height="500" alt="TIHU"/><br/>
 </div>
    
-CNN models and accuracy  
+CNN models and accuracy:   
 | num | category | CNN model | TIHU(int8) accuracy | llvm(float) accuracy|
 |---|----------------|-------|--------|------|
 | 1 | classification | LeNet | 0.9884 | 0.992|
@@ -20,7 +21,7 @@ CNN models and accuracy
 | 5 | detection | YOLOv3 | 0.548 | 0.562|
 | 6 | NLP | bert-base | - | - |
 
-Example of yolov3
+Example of yolov3:  
 <div align=center>
 <img src="./doc/yolov3.jpg" width="400" height="400" alt="TIHU"/><br/>
 </div>
