@@ -39,6 +39,16 @@ Example of yolov3:
 <img src="./doc/yolov3.jpg" width="400" height="400" alt="TIHU"/><br/>
 </div>
 
+## Code structure
+
+├── compiler_runtime: TIHU software, include compiler and runtime  
+├── doc: TIHU user's guide  
+├── firmware: TIHU SoC firmware  
+├── xdma: driver and firmware download tools  
+├── docker: docker file  
+├── README.md  
+└── LICENSE  
+
 ## TIHU software structure 
 TIHU software include compiler, runtime, xdma driver and firmware.
 
@@ -60,16 +70,6 @@ CNN models are compiled into computing tasks with different device type and subm
 <div align=center>
 <img src="./doc/TIHU_workflow.png" width="600" height="500" alt="TIHU"/><br/>
 </div>
-
-## Code structure
-
-├── compiler_runtime: TIHU software, include compiler and runtime  
-├── doc: TIHU user's guide  
-├── firmware: TIHU SoC firmware  
-├── xdma: driver and firmware download tools  
-├── docker: docker file  
-├── README.md  
-└── LICENSE  
 
 ## Build procedure on ubuntu  
 
