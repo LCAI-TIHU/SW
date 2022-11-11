@@ -5,7 +5,7 @@ TIHU demo are test cases we provide to help users quickly get familiar with proj
 TIHU currently supports the following models
 | Model | Checkpoint | 
 | :----: | :----:  |
-|[LeNet](http://vision.stanford.edu/cs598_spring07/papers/Lecun98.pdf)|[LeNet.pb](https://pan.baidu.com/s/1Dk_cYJM5wt854xtb4K7Hdw?pwd=TIHU)|
+|[LeNet](http://vision.stanford.edu/cs598_spring07/papers/Lecun98.pdf)|[lenet.pb](https://pan.baidu.com/s/1Dk_cYJM5wt854xtb4K7Hdw?pwd=TIHU)|
 | [ResNet V1 50](https://arxiv.org/abs/1512.03385) |[resnet_v1_50_2016_08_28.tar.gz](http://download.tensorflow.org/models/resnet_v1_50_2016_08_28.tar.gz) |
 | [MobileNet_v2_1.0_224](https://arxiv.org/abs/1801.04381) |[mobilenet_v2_1.0_224.tgz](https://storage.googleapis.com/mobilenet_v2/checkpoints/mobilenet_v2_1.0_224.tgz) |
 # Evaluating performance of a quantized model
