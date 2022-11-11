@@ -107,9 +107,9 @@ $ source env.sh && source build.sh
 # Quickstart
 
 There are some samples in /SW/compiler_runtime/demo, before run you should:   
-* Make sure the FPGA bitstream has been load, you can refer to HW project;  
-* Make sure firmware has been compiled and downloaded, you can refer to ./firmware README;  
-* Run docker and build compiler and runtime, make sure env.sh has been sourced;  
+* Make sure the FPGA bitstream has been load, you can refer to HW project.  
+* Make sure firmware has been compiled and downloaded, you can refer to ./firmware README.   
+* Run docker and build compiler and runtime, make sure env.sh has been sourced.  
 ```bash
 $ mkdir -p /workspace/mnist && cd /workspace/mnist
 $ wget http://yann.lecun.com/exdb/mnist/t10k-images-idx3-ubyte.gz && gunzip t10k-images-idx3-ubyte.gz
