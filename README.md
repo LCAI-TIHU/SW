@@ -61,6 +61,10 @@ TIHU software include compiler, runtime, xdma driver and firmware.
 Compiler and runtime are designed based on TVM . Compiler consists of parser, optimizer, codegen, operator libraries.
 CNN models are compiled into computing tasks with different device type and submitted to device by runtime. The host interacts with the device though PCIe.
 
+### Driver
+
+TIHU driver is designed based on Xilinx PCIe DMA driver, so as the firmware download program. More information about driver can be found in readme of xdma.
+
 ### Firmware
 
  TIHU hardware is driven by firmware to complete computing tasks submitted by runtime. More information about firmware can be found in readme of firmware. 
