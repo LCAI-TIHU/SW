@@ -93,7 +93,7 @@ $ cd /workspace/SW/compiler_runtime
 $ source env.sh && source build.sh 
 
 ```
-
+# Build FPGA
 
 # Quickstart
 
