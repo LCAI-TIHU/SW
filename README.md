@@ -73,7 +73,7 @@ Install docker and then:
 ```bash
 $ sudo docker run -it --network=host -v /your/project/path/on/host:/workspace -v /dev:/dev --privileged=true --name your_docker_name docker_image_name:version /bin/bash # run docker and load ubuntu image
 $ apt-get update
-4 apt-get install -y python3 python3-dev python3-setuptools python3-pip python3-venv python-scipy gcc libtinfo-dev zlib1g-dev build-essential cmake libedit-dev libxml2-dev llvm-dev libjpeg-turbo8-dev git python3-pip autoconf
+$ apt-get install -y python3 python3-dev python3-setuptools python3-pip python3-venv python-scipy gcc libtinfo-dev zlib1g-dev build-essential cmake libedit-dev libxml2-dev llvm-dev libjpeg-turbo8-dev git python3-pip autoconf
 $ pip3 install -U pip -i https://pypi.tuna.tsinghua.edu.cn/simple
 $ pip3 install numpy decorator attrs pytest scipy  opencv-python-headless tqdm pycocotools 
 $ pip3 install keras==2.6.0 tensorflow==2.6.1  
