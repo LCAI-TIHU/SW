@@ -70,46 +70,47 @@ At present, following operators are supported. Intrinsic operators will be done.
 
 1. Build compiler and runtime without dockfile   
 Install docker and then:  
-```
-sudo docker run -it --network=host -v /your/project/path/on/host:/workspace -v /dev:/dev --privileged=true --name your_docker_name docker_image_name:version /bin/bash # run docker and load ubuntu image
-apt-get update
-apt-get install -y python3 python3-dev python3-setuptools python3-pip python3-venv python-scipy gcc libtinfo-dev zlib1g-dev build-essential cmake libedit-dev libxml2-dev llvm-dev libjpeg-turbo8-dev git python3-pip autoconf # install prerequisites
-pip3 install -U pip -i https://pypi.tuna.tsinghua.edu.cn/simple # update pip
-pip3 install numpy decorator attrs pytest scipy  opencv-python-headless tqdm pycocotools -i https://pypi.tuna.tsinghua.edu.cn/simple
-pip3 install tensorflow==2.6.1 -i https://pypi.tuna.tsinghua.edu.cn/simple  # install tensorflow
-git clone https://github.com/LCAI-TIHU/SW.git
-cd SW/compiler_runtime && source env.sh
-source build.sh
+```bash
+$ sudo docker run -it --network=host -v /your/project/path/on/host:/workspace -v /dev:/dev --privileged=true --name your_docker_name docker_image_name:version /bin/bash # run docker and load ubuntu image
+$ apt-get update
+4 apt-get install -y python3 python3-dev python3-setuptools python3-pip python3-venv python-scipy gcc libtinfo-dev zlib1g-dev build-essential cmake libedit-dev libxml2-dev llvm-dev libjpeg-turbo8-dev git python3-pip autoconf
+$ pip3 install -U pip -i https://pypi.tuna.tsinghua.edu.cn/simple
+$ pip3 install numpy decorator attrs pytest scipy  opencv-python-headless tqdm pycocotools 
+$ pip3 install keras==2.6.0 tensorflow==2.6.1  
+$ git clone https://github.com/LCAI-TIHU/SW.git
+$ cd SW/compiler_runtime && source env.sh
+$ source build.sh
 
 ```
 
 2. build compiler and runtime with dockefile   
-```
-git clone https://github.com/LCAI-TIHU/SW.git
-cd SW/docker && sudo docker build -t tihu_software:v1 .
-sudo docker run -it --network=host -v /your/SW/path/:/workspace -v /dev:/dev --privileged=true --name tihu_software tihu_software:v1 /bin/bash
-cd /workspace/SW/compiler_runtime
-source env.sh && source build.sh 
+We provide two versions of dockerfile, you can choose by yourself, which will have a positive effect on your build efficiency
+```bash
+$ git clone https://github.com/LCAI-TIHU/SW.git
+$ cd SW/docker && sudo docker build -t tihu_software:v1 -f TIHU.Dockerfile .
+$ sudo docker run -it --network=host -v /your/SW/path/:/workspace -v /dev:/dev --privileged=true --name tihu_software tihu_software:v1 /bin/bash
+$ cd /workspace/SW/compiler_runtime
+$ source env.sh && source build.sh 
 
 ```
 
 
-# Run reference design example
+# Quickstart
 
-There are some samples in xxx/SW/compiler_runtime/AIPU_demo, before run you should:   
+There are some samples in /SW/compiler_runtime/demo, before run you should:   
 * Make sure the FPGA bitstream has been load, you can refer to HW project;  
 * Make sure firmware has been compiled and downloaded, you can refer to ./firmware README;  
 * Run docker and build compiler and runtime, make sure env.sh has been sourced;  
-```
-mkdir -p /workspace/mnist && cd /workspace/mnist
-wget http://yann.lecun.com/exdb/mnist/t10k-images-idx3-ubyte.gz && gunzip t10k-images-idx3-ubyte.gz
-wget http://yann.lecun.com/exdb/mnist/t10k-labels-idx1-ubyte.gz && gunzip t10k-labels-idx1-ubyte.gz
-mkdir -p /workspace/tfmodel && cd /workspace/tfmodel
-cp /workspace/SW/compiler_runtime/AIPU_demo/lenet_test/frozen_lenet_3.pb ./
-mkdir -p /worksapce/testimage && cd /worksapce/testimage
-cp /workspace/SW/compiler_runtime/AIPU_demo/lenet_test/00000_7.jpg ./
-cd /workspace/SW/compiler_runtime/AIPU_demo
-python3 from_tensorflow_quantize_lenet.py 2>&1 | tee lenet.log
+```bash
+$ mkdir -p /workspace/mnist && cd /workspace/mnist
+$ wget http://yann.lecun.com/exdb/mnist/t10k-images-idx3-ubyte.gz && gunzip t10k-images-idx3-ubyte.gz
+$ wget http://yann.lecun.com/exdb/mnist/t10k-labels-idx1-ubyte.gz && gunzip t10k-labels-idx1-ubyte.gz
+$ mkdir -p /workspace/tfmodel && cd /workspace/tfmodel
+$ cp /workspace/SW/compiler_runtime/demo/lenet_test/frozen_lenet_3.pb ./
+$ mkdir -p /worksapce/testimage && cd /worksapce/testimage
+$ cp /workspace/SW/compiler_runtime/demo/lenet_test/00000_7.jpg ./
+$ cd /workspace/SW/compiler_runtime/demo
+$ python3 from_tensorflow_quantize_lenet.py 2>&1 | tee lenet.log
 
 ```   
 This photo is the result of yolov3.

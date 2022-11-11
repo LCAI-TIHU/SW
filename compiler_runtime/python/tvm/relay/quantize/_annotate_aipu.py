@@ -21,6 +21,7 @@
 # This is a new or modified file.
 #
 
+
 """Internal module for registering attribute for annotation."""
 import warnings
 from tvm import topi
@@ -32,64 +33,7 @@ from .. import op as _op
 from . import _quantize
 from .quantize import QAnnotateKind, current_qconfig, quantize_context
 from .quantize import _forward_op
-# from ...relay.op.strategy.generic import is_depthwise_conv2d
 from ._annotate import QAnnotateExpr, attach_simulated_quantize
-
-if_prequantize_weight = False
-
-# @_op.register_compute("relay.op.annotation.simulated_quantize")
-# def simulated_quantize_compute(attrs, inputs, out_type):
-#     """Compiler for simulated_quantize."""
-#     assert len(inputs) == 4
-#     assert attrs.sign
-#     assert attrs.rounding == "round"
-
-#     data, scale, clip_min, clip_max = inputs
-
-#     if attrs.kind == QAnnotateKind.IDENTITY:
-#         return [topi.identity(data)]
-
-#     # simulate rounding error
-#     if data.ndim == 2: # TODO Jasper dense op, y = nn.dense(x, transpose(w, [1, 0]))
-#         data = topi.transpose(data)
-#         scaled_data = topi.divide(data, scale)
-#         scaled_data = topi.transpose(scaled_data)
-#     else:
-#         scaled_data = topi.divide(data, scale)
-
-#     clipped_data = topi.maximum(topi.minimum(scaled_data, clip_max), clip_min)
-#     round_data = topi.round(clipped_data)
-
-#     # recover data
-#     if data.ndim == 2: # TODO Jasper dense op, y = nn.dense(x, transpose(w, [1, 0]))
-#         round_data = topi.transpose(round_data)
-#         rdata = topi.multiply(round_data, scale)
-#         rdata = topi.transpose(rdata)
-#     else:
-#         rdata = topi.multiply(round_data, scale)
-#     return [rdata]
-
-
-# _reg.register_injective_schedule("relay.op.annotation.simulated_quantize")
-# _reg.register_pattern("relay.op.annotation.simulated_quantize", _reg.OpPattern.ELEMWISE)
-# _reg.register_injective_schedule("annotation.cast_hint")
-
-
-# @tvm._ffi.register_object("relay.QAnnotateExpr")
-# class QAnnotateExpr(_expr.TempExpr):
-#     """A special kind of Expr for Annotating.
-
-#     Parameters
-#     ---------
-#     expr: Expr
-#         the original relay ir expr.
-
-#     kind: QAnnotateKind
-#         the kind of annotation field.
-#     """
-
-#     def __init__(self, expr, kind):
-#         self.__init_handle_by_constructor__(_quantize.make_annotate_expr, expr, kind)
 
 
 def _get_expr_kind(anno):
@@ -132,39 +76,6 @@ def register_aipu_annotate_function(op_name, frewrite=None, level=10):
     return _register(frewrite) if frewrite is not None else _register
 
 
-# def attach_simulated_quantize(data, kind, sign=True, rounding="round", axis=-1):
-#     """Attach a simulated quantize operation after input data expr.
-
-#     Parameters
-#     ---------
-#     data: Expr
-#         the original data expr.
-
-#     kind: QAnnotateKind
-#         the kind of annotation field.
-#     """
-#     quantize_op = _op.get("relay.op.annotation.simulated_quantize")
-#     if isinstance(data, _expr.Call) and data.op == quantize_op:
-#         if data.attrs.kind == kind and data.attrs.sign == sign and data.attrs.rounding == rounding:
-#             return data
-
-#     qctx = quantize_context()
-#     key = tuple([data, kind, sign, rounding])
-#     if key in qctx.qnode_map:
-#         return qctx.qnode_map[key]
-
-#     dom_scale = _expr.var("dom_scale")
-#     clip_min = _expr.var("clip_min")
-#     clip_max = _expr.var("clip_max")
-    
-#     qnode = _quantize.simulated_quantize(data, dom_scale, clip_min, clip_max, kind, sign, rounding, axis)
-#     qctx.qnode_map[key] = qnode
-#     return qnode
-
-
-# tvm._ffi.register_func("relay.quantize.attach_simulated_quantize", attach_simulated_quantize)
-
-
 @register_aipu_annotate_function("nn.contrib_conv2d_NCHWc")
 def conv2d_nchwc_rewrite(ref_call, new_args, ctx):
     warnings.warn(
@@ -189,13 +100,10 @@ def conv2d_rewrite(ref_call, new_args, ctx):
         lhs_expr = attach_simulated_quantize(lhs_expr, QAnnotateKind.INPUT)
 
     assert rhs_kind is None
-    # 
-    if if_prequantize_weight:
-        axis = -1
-        if ref_call.attrs["groups"] == ref_call.attrs["channels"] and ref_call.attrs["groups"] != 1:
-            axis = 2
-        rhs_expr = attach_simulated_quantize(rhs_expr, QAnnotateKind.WEIGHT, True, "round", axis)
-    #
+    axis = -1
+    if ref_call.attrs["groups"] == ref_call.attrs["channels"] and ref_call.attrs["groups"] != 1:
+        axis = 2
+    rhs_expr = attach_simulated_quantize(rhs_expr, QAnnotateKind.WEIGHT, True, "round", axis)
 
 
     expr = _forward_op(ref_call, [lhs_expr, rhs_expr])
@@ -263,43 +171,13 @@ def dense_rewrite(ref_call, new_args, ctx):
         lhs_expr = attach_simulated_quantize(lhs_expr, QAnnotateKind.INPUT)
 
     assert rhs_kind is None
-    #
-    if if_prequantize_weight:
-        rhs_expr = attach_simulated_quantize(rhs_expr, QAnnotateKind.WEIGHT, axis=0)
-    #
+    rhs_expr = attach_simulated_quantize(rhs_expr, QAnnotateKind.WEIGHT, axis=0)
 
     expr = _forward_op(ref_call, [lhs_expr, rhs_expr])
     # quantize_context().stop_quantize()
     # expr = attach_simulated_quantize(expr, QAnnotateKind.INPUT)
 
     return QAnnotateExpr(expr, QAnnotateKind.ACTIVATION)
-
-
-# @register_aipu_annotate_function("multiply")
-# def multiply_rewrite(ref_call, new_args, ctx):
-#     """Rewrite function for multiply."""
-#     if quantize_context().check_to_skip(ref_call):
-#         return None
-
-#     lhs_expr, lhs_kind = _get_expr_kind(new_args[0])
-#     rhs_expr, rhs_kind = _get_expr_kind(new_args[1])
-
-#     if lhs_kind is None and rhs_kind is None:
-#         return None
-
-#     if lhs_kind in [QAnnotateKind.ACTIVATION, QAnnotateKind.INPUT]:
-#         # quantize lhs to INPUT field
-#         # if lhs_kind == QAnnotateKind.ACTIVATION:
-#         lhs_expr = attach_simulated_quantize(lhs_expr, QAnnotateKind.INPUT)
-#         if _analysis.check_constant(rhs_expr):
-#             rhs_expr = attach_simulated_quantize(rhs_expr, QAnnotateKind.WEIGHT)
-#         else:
-#             rhs_expr = attach_simulated_quantize(rhs_expr, QAnnotateKind.INPUT)
-#         expr = _forward_op(ref_call, [lhs_expr, rhs_expr])
-#         expr = attach_simulated_quantize(expr, QAnnotateKind.INPUT)
-#         return QAnnotateExpr(expr, QAnnotateKind.ACTIVATION)
-
-#     raise ValueError
 
 
 @register_aipu_annotate_function("add")
@@ -353,11 +231,7 @@ def add_rewrite(ref_call, new_args, ctx):
             expr = _forward_op(ref_call, [lhs_expr, rhs_expr])
             expr = attach_simulated_quantize(expr, QAnnotateKind.INPUT)
             return QAnnotateExpr(expr, QAnnotateKind.ACTIVATION)
-        # if (lhs_kind == QAnnotateKind.ACTIVATION and rhs_kind == QAnnotateKind.INPUT) or (
-        #     lhs_kind == QAnnotateKind.INPUT and rhs_kind == QAnnotateKind.ACTIVATION
-        # ):
-        #     expr = _forward_op(ref_call, [lhs_expr, rhs_expr])
-        #     return QAnnotateExpr(expr, QAnnotateKind.ACTIVATION)
+
     raise ValueError()
 
 
@@ -373,16 +247,9 @@ def identity_rewrite(ref_call, new_args, ctx):
     ret_expr = _forward_op(ref_call, [x_expr])
     return QAnnotateExpr(ret_expr, x_kind)
 
-# register_aipu_annotate_function("reshape", identity_rewrite)
-# register_aipu_annotate_function("clip", identity_rewrite)
-# register_aipu_annotate_function("nn.relu", identity_rewrite)
 register_aipu_annotate_function("nn.batch_flatten", identity_rewrite)
 register_aipu_annotate_function("transpose", identity_rewrite)
 register_aipu_annotate_function("annotation.stop_fusion", identity_rewrite)
-# register_aipu_annotate_function("nn.leaky_relu", identity_rewrite)
-# register_aipu_annotate_function("softmax", identity_rewrite)
-# register_aipu_annotate_function("strided_slice", identity_rewrite)
-
 
 def act_rewrite(ref_call, new_args, ctx):
     """Rewrite function for activation"""
@@ -401,47 +268,6 @@ def act_rewrite(ref_call, new_args, ctx):
 register_aipu_annotate_function("clip", act_rewrite)
 register_aipu_annotate_function("nn.relu", act_rewrite)
 register_aipu_annotate_function("nn.leaky_relu", act_rewrite)
-
-# def pool2d_rewrite(ref_call, new_args, ctx):
-#     """Rewrite function for max pool2d"""
-#     if quantize_context().check_to_skip(ref_call):
-#         return None
-
-#     expr, x_kind = _get_expr_kind(new_args[0])
-
-#     if x_kind is None:
-#         return None
-#     if x_kind == QAnnotateKind.ACTIVATION:
-#         expr = attach_simulated_quantize(expr, QAnnotateKind.INPUT)
-
-#     expr = _forward_op(ref_call, [expr])
-#     expr = attach_simulated_quantize(expr, QAnnotateKind.INPUT)
-#     return QAnnotateExpr(expr, QAnnotateKind.INPUT)
-
-
-# register_aipu_annotate_function("nn.max_pool2d", pool2d_rewrite)
-# register_aipu_annotate_function("nn.avg_pool2d", pool2d_rewrite)
-# register_aipu_annotate_function("mean", pool2d_rewrite) # pass3
-
-
-# def pool1d_rewrite(ref_call, new_args, ctx):
-#     """Rewrite function for max pool1d"""
-#     if quantize_context().check_to_skip(ref_call):
-#         return None
-
-#     expr, x_kind = _get_expr_kind(new_args[0])
-
-#     if x_kind is None:
-#         return None
-#     if x_kind == QAnnotateKind.ACTIVATION:
-#         expr = attach_simulated_quantize(expr, QAnnotateKind.INPUT)
-
-#     expr = _forward_op(ref_call, [expr])
-#     expr = attach_simulated_quantize(expr, QAnnotateKind.INPUT)
-#     return QAnnotateExpr(expr, QAnnotateKind.INPUT)
-
-
-# register_aipu_annotate_function("nn.max_pool1d", pool1d_rewrite)
 
 
 @register_aipu_annotate_function("annotation.cast_hint")
@@ -482,23 +308,6 @@ def concatenate_rewrite(ref_call, new_args, ctx):
     # expr = attach_simulated_quantize(expr, QAnnotateKind.INPUT)
     return QAnnotateExpr(expr, QAnnotateKind.ACTIVATION)
 
-
-# @register_aipu_annotate_function("nn.global_avg_pool2d")
-# def global_avg_pool2d_rewrite(ref_call, new_args, ctx):
-#     """Rewrite function for global_avg_pool2d for stopping quantize"""
-#     if quantize_context().check_to_skip(ref_call):
-#         return None
-
-#     expr, x_kind = _get_expr_kind(new_args[0])
-
-#     if x_kind is None:
-#         return None
-#     expr = _forward_op(ref_call, [new_args[0].realize()])
-#     # expr = attach_simulated_quantize(expr, QAnnotateKind.INPUT)
-
-#     # stop quantize after global_avg_pool2d
-#     # quantize_context().stop_quantize()
-#     return expr
 
 
 @register_aipu_annotate_function("nn.batch_matmul")

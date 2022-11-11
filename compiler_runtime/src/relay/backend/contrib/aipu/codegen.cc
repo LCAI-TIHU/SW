@@ -1,7 +1,9 @@
+
 /*
  * Inspur.
  * This is a new or modified file.
  */
+
 #include "codegen_aipu.h"
 #include "codegen_riscv.h"
 #include <tvm/relay/analysis.h>
@@ -42,12 +44,24 @@
 #include "graph_aid_dtype.h" //yuanyue 20220713 aid dtype
 
 #define TARGET_CONFIG_NAME "nv_full"
-
-// quantization mode for NVDLA. NOTE. PER_KERNEL mode is not compatible with group conv
-#define DEFAULT_QUANT_MODE nvdla::QuantizationMode::PER_FILTER  // PER_FILTER  PER_KERNEL
+#define DEFAULT_QUANT_MODE nvdla::QuantizationMode::PER_FILTER  // PER_FILTER
 #define DEFAULT_BATCH_SIZE 0
 #define DEFAULT_DATA_FMT nvdla::DataFormat::NHWC
 // #define DEFAULT_DATA_FMT nvdla::DataFormat::NCHW
+
+auto theQuantizationMode = nvdla::QuantizationMode::PER_FILTER;
+
+TVM_REGISTER_GLOBAL("AIPU_config_quantization_PER_FILTER")
+.set_body([](tvm::TVMArgs args, tvm::TVMRetValue* rv){
+  bool if_PER_FILTER = args[0];
+  if (if_PER_FILTER) {
+    theQuantizationMode = nvdla::QuantizationMode::PER_FILTER;
+  } else {
+    theQuantizationMode = nvdla::QuantizationMode::PER_KERNEL;
+  }
+  *rv = true;
+});
+
 
 using tvm::relay::contrib::aipu::IBinaryProtoBlob;
 using tvm::relay::contrib::aipu::IBlobNameToTensor;
@@ -66,8 +80,8 @@ static CompilerTestAppArgs defaultCompilerTestAppArgs = {
     /* .profileName = */ "fast-math",
     /* .profileFile = */ "",
     /* .configtarget = */ TARGET_CONFIG_NAME,
-    /* .calibtable = */ "", //"./calibdata_new.json",  // test_calibdata.json, yolov3_calibdata.json
-    /* .quantizationMode = */ DEFAULT_QUANT_MODE,
+    /* .calibtable = */ "", 
+    /* .quantizationMode = */ theQuantizationMode,
     /* .numBatches = */ DEFAULT_BATCH_SIZE,
     /* .inDataFormat = */ DEFAULT_DATA_FMT,
     /* .computePrecision = */ nvdla::DataType::INT8  // nvdla::DataType::INT8 HALF
@@ -608,126 +622,7 @@ fail:
   return e;
 }
 
-NvDlaError generateTensorScales(const CompilerTestAppArgs* appArgs, CompilerTestInfo* i,
-                                nvdla::INetwork* network) {
-  NvDlaError e = NvDlaSuccess;
-  // float calibtable_scale[11]={0.00784517265856266,
-  //                             0.016777578741312027,
-  //                             0.016777578741312027,
-  //                             0.10594448447227478,
-  //                             0.10594448447227478,
-  //                             0.10339591652154922,
-  //                             0.09396950900554657,
-  //                             0.2623027563095093,
-  //                             0.007875937968492508,
-  //                             0.10339591652154922,
-  //                             0.09396950900554657,};
-  float calibtable_scale[38] = {
-      1.0,       0.134952,  0.134952,  0.134008,  0.122415,  0.0674108, 0.0674108, 0.100203,
-      0.100203,  0.071265,  0.0986611, 0.0986611, 0.0691965, 0.0691965, 0.069334,  0.069334,
-      0.0584154, 0.0898758, 0.0898758, 0.0898758, 0.0666794, 0.0666794, 0.0877696, 0.0877696,
-      0.079444,  0.0871094, 0.0871094, 0.102626,  0.0620531, 0.0620531, 0.0992914, 0.061462,
-      0.061462,  0.0707837, 0.0707837, 0.0454385, 0.100094,  0.100094};  // ResNet50 bottleneck5
-  int index_scale = 0;
 
-  std::vector<nvdla::ILayer*> networkLayers = network->getLayers();
-  std::vector<nvdla::ITensor*> networkInputs = network->getInputs();
-
-  std::vector<nvdla::ILayer*>::iterator li = networkLayers.begin();
-  std::vector<nvdla::ITensor*>::iterator nii = networkInputs.begin();
-
-  // set scaling factor for the network input tensors
-  for (; nii != networkInputs.end(); ++nii) {
-    NvF32 scale = calibtable_scale[0];  // 1;
-    NvF32 min = scale * -127.0f;
-    NvF32 max = scale * 127.0f;
-    std::string tName = (*nii)->getName();
-    //LOG(INFO) << "network input name:" << tName.c_str() << std::endl;
-    // set same dynamic range for all channels of the tensor (cIndex = -1)
-    PROPAGATE_ERROR_FAIL((*nii)->setChannelDynamicRange(-1, min, max));
-    const_cast<CompilerTestAppArgs*>(appArgs)->tensorScales.insert(
-        std::pair<std::string, NvF32>(tName, scale));
-    if (0) NvDlaDebugPrintf("setting dynamic range of: %s to %f\n", tName.c_str(), scale);
-  }
-
-  // NvDlaDebugPrintf("***********SPLITING LINE*************\n");
-
-  for (; li != networkLayers.end(); ++li) {
-    // work around for many calibtable data needed
-    // index_scale++;
-    NvF32 scale = calibtable_scale[index_scale];
-    NvF32 min = scale * -127.0f;
-    NvF32 max = scale * 127.0f;
-    std::string lName = (*li)->getName();
-    nvdla::ITensor* outTensor = (*li)->getOutput(0);
-    // LOG(INFO)<<"network layer name:"<<lName.c_str()<<
-    // ","<<calibtable_scale[index_scale]<<std::endl;
-    // set same dynamic range for all channels of the tensor (cIndex = -1)
-    PROPAGATE_ERROR_FAIL(outTensor->setChannelDynamicRange(-1, min, max));
-    const_cast<CompilerTestAppArgs*>(appArgs)->tensorScales.insert(
-        std::pair<std::string, NvF32>(lName, scale));
-    if (0) NvDlaDebugPrintf("setting dynamic range of: %s to %f\n", lName.c_str(), scale);
-  }
-
-fail:
-  return e;
-}
-
-// static NvDlaError parseCaffeNetwork(const CompilerTestAppArgs* appArgs, CompilerTestInfo* i,
-// const rapidjson::Document& doc, u_int32_t& index)
-// {
-//     NVDLA_UNUSED(appArgs);
-//     NvDlaError e = NvDlaSuccess;
-
-//     nvdla::INetwork* network = NULL;
-
-//     const nvdla::caffe::IBlobNameToTensor* b = NULL;
-//     nvdla::caffe::ICaffeParser* parser = nvdla::caffe::createCaffeParser();
-//     std::string caffePrototxtFile = appArgs->prototxt.c_str();
-//     std::string caffeModelFile = appArgs->caffemodel.c_str();
-
-//     network = nvdla::createNetwork();
-//     if (!network)
-//         ORIGINATE_ERROR_FAIL(NvDlaError_BadParameter, "createNetwork() failed");
-
-//     NvDlaDebugPrintf("parsing caffe network...\n");
-//     b = parser->parse(caffePrototxtFile.c_str(), caffeModelFile.c_str(), network);
-//     if (!b)
-//         ORIGINATE_ERROR_FAIL(NvDlaError_BadParameter, "Unable to parse caffemodel: \"%s\"",
-//         caffePrototxtFile.c_str());
-//     // if the application has so far not marked the network's outputs, allow the parser to do so
-//     now if (network->getNumOutputs() <= 0)
-//     {
-//         int outs = parser->identifyOutputs(network);
-//         NvDlaDebugPrintf("Marking total %d outputs\n", outs);
-//         if (outs <= 0)
-//             ORIGINATE_ERROR_FAIL(NvDlaError_BadValue, "Unable to identify outputs for the
-//             network: %d", outs);
-//     }
-
-//     if (appArgs->computePrecision == nvdla::DataType::INT8)
-//     {
-//         if (appArgs->calibTable != "")  // parse and set tensor scales
-//         {
-//             NvDlaDebugPrintf("parsing calibration table...\n");
-//             PROPAGATE_ERROR_FAIL(parseTensorScales(appArgs, i, network, doc, index));
-//         }
-//         else    // use default or const scaling factors
-//         {
-//             NvDlaDebugPrintf("initialize all tensors with const scaling factors of 127...\n");
-//             PROPAGATE_ERROR_FAIL(generateTensorScales(appArgs, i, network));
-//         }
-//     }
-
-//     NvDlaDebugPrintf("attaching parsed network to the wisdom...\n");
-//     if (!i->wisdom->setNetworkTransient(network))
-//         ORIGINATE_ERROR_FAIL(NvDlaError_BadParameter, "wisdom->setNetworkTransient() failed");
-
-//     return NvDlaSuccess;
-
-// fail:
-//     return e;
-// }
 static NvDlaError relay2network(const CompilerTestAppArgs* appArgs, CompilerTestInfo* i,
                                 const tvm::relay::Function& func, IRelayParser* parser,
                                 std::vector<float>& calibdata, std::vector<std::vector<float>> i_scale_Vec) {
@@ -753,26 +648,11 @@ static NvDlaError relay2network(const CompilerTestAppArgs* appArgs, CompilerTest
   if (network->getNumOutputs() <= 0) {
     int outs = parser->identifyOutputs(network);
     NvDlaDebugPrintf("Marking total %d outputs\n", outs);
-    // if (outs <= 0)
-    //     ORIGINATE_ERROR_FAIL(NvDlaError_BadValue, "Unable to identify outputs for the network:
-    //     %d", outs);
   }
 
   if (appArgs->computePrecision == nvdla::DataType::INT8) {
     NvDlaDebugPrintf("parsing calibration table...\n");
     PROPAGATE_ERROR_FAIL(parseTensorScales(appArgs, i, network, calibdata, i_scale_Vec));
-
-    // if (appArgs->calibTable != "")  // parse and set tensor scales
-    // {
-    //     NvDlaDebugPrintf("parsing calibration table...\n");
-    //     PROPAGATE_ERROR_FAIL(parseTensorScales(appArgs, i, network, doc, index, iscale));
-    // }
-    // else    // use default or const scaling factors
-    // {
-    //     std::cout<<"initialize all tensors with const scaling factors of 127..."<<std::endl;
-    //     NvDlaDebugPrintf("initialize all tensors with const scaling factors of 127...\n");
-    //     PROPAGATE_ERROR_FAIL(generateTensorScales(appArgs, i, network));
-    // }
   }
 
   NvDlaDebugPrintf("attaching parsed network to the wisdom...\n");
@@ -788,7 +668,7 @@ NvDlaError parseAndCompile(const CompilerTestAppArgs* appArgs, CompilerTestInfo*
                            const tvm::relay::Function& func, uint8_t** buf, uint64_t* size,
                            std::vector<float>& calibdata, std::vector<std::vector<float>> i_scale_Vec) {
   NvDlaError e = NvDlaSuccess;
-  //bool isCaffe = false;  // appArgs->caffemodel != "";
+  bool isCaffe = false;  // appArgs->caffemodel != "";
   bool isRelay = true;
   IRelayParser* parser = tvm::relay::contrib::aipu::createRelayParser();
   PROPAGATE_ERROR_FAIL(parseSetup(appArgs, i));
@@ -844,211 +724,6 @@ fail:
   return e;
 }
 
-// class Preprocess : tvm::relay::ExprMutator {
-//  public:
-
-//   using Expr = tvm::RelayExpr;
-//   using CallNode = tvm::relay::CallNode;
-//   using OpNode = tvm::OpNode;
-//   using Op = tvm::Op;
-
-//   explicit Preprocess(std::string name)
-//     : name_(name) {}
-
-//   std::vector<long int> GetShape(const tvm::Type& type) {
-//     const auto* ttype = type.as<tvm::relay::TensorTypeNode>();
-//     ICHECK(ttype) << "Expect TensorTypeNode";
-//     std::vector<long int> shape;
-//     for (size_t i = 0; i < ttype->shape.size(); ++i) {
-//       auto* val = ttype->shape[i].as<tvm::IntImmNode>();
-//       ICHECK(val);
-//       shape.push_back(val->value);
-//     }
-//     return shape;
-//   }
-
-//   Expr VisitExpr_(const CallNode* call_node) final {
-//     auto add_op = tvm::relay::Op::Get("add");
-//     tvm::Array<Expr> call_args;
-//     auto new_op = VisitExpr(call_node->op);
-//     for (auto arg : call_node->args) {
-//       if (arg->IsInstance<CallNode>()){
-//         const CallNode * node = (static_cast<const CallNode *>
-//                                  (arg.get()));
-//         const auto op_node = node->op.as<OpNode>();
-//         std::string argop_name = tvm::runtime::GetRef<Op>(op_node)->name;
-//         if (argop_name == name_) {
-//           auto type = arg->checked_type();
-//           auto shape = GetShape(type);
-//           const auto* ttype = type.as<tvm::relay::TensorTypeNode>();
-//           std::vector<float> data;
-//           long int size = 1;
-//           for (auto i : shape)
-//             size = size * i;
-//           for (long int j = 0; j < size ; j++)
-//             data.push_back(0);
-//           auto zero = tvm::relay::MakeConstantTensor(ttype->dtype, shape, data);
-//           arg = tvm::relay::Call(add_op, {VisitExpr(arg), zero});
-//         }
-//         else
-//           arg = VisitExpr(arg);
-//       }
-//       call_args.push_back(arg);
-//     }
-//     return tvm::relay::Call(new_op, call_args, call_node->attrs,
-//                             call_node->type_args, call_node->span);
-//   }
-
-//   tvm::IRModule preprocess(tvm::relay::Function func){
-//     auto new_expr = VisitExpr(func);
-//     const tvm::relay::FunctionNode * new_funcnode= static_cast
-//       <const tvm::relay::FunctionNode *>(new_expr.get());
-//     auto new_func = tvm::runtime::GetRef<tvm::relay::Function>(new_funcnode);
-//     new_func = tvm::relay::Function(tvm::relay::FreeVars(new_funcnode->body), new_funcnode->body,
-//     new_func->ret_type,
-//                                 new_func->type_params, new_func->attrs);
-//     auto mod = tvm::IRModule::FromExpr(new_func);
-//     mod = tvm::relay::transform::InferType()(mod);
-//     return mod;
-//   }
-
-//   // operator name
-//   std::string name_;
-// };
-
-// class CustomizedAnnotation4Riscv : tvm::relay::ExprMutator {
-//  public:
-//     using Expr = tvm::RelayExpr;
-//     using CallNode = tvm::relay::CallNode;
-//     using TupleNode = tvm::relay::TupleNode;
-//     using OpNode = tvm::OpNode;
-//     using Op = tvm::Op;
-
-//   explicit CustomizedAnnotation4Riscv(std::string compiler)
-//     : compiler_(compiler) {
-//     default_compiler_ = "riscv";
-//     operator_set.insert("nn.softmax");
-//     // operator_set.insert("nn.max_pool2d");
-//     // operator_set.insert("reshape");
-//     // operator_set.insert("myop");
-//   }
-
-//   Expr VisitExpr_(const CallNode* call_node) final {
-//     // const auto call_op_node = call_node->op.as<OpNode>();
-//     // std::string first_callop_name = tvm::runtime::GetRef<Op>(call_op_node)->name;
-//     // LOG(INFO) << first_callop_name;
-//     auto compiler_begin = tvm::relay::Op::Get("annotation.compiler_begin");
-//     auto compiler_end = tvm::relay::Op::Get("annotation.compiler_end");
-//     auto attrs_compiler = tvm::runtime::make_object
-//       <tvm::relay::CompilerAttrs>();
-//     attrs_compiler->compiler = compiler_;
-//     auto attrs_default = tvm::runtime::make_object
-//       <tvm::relay::CompilerAttrs>();
-//     attrs_default->compiler = default_compiler_;
-//     tvm::Array<Expr> call_args;
-//     auto new_op = VisitExpr(call_node->op);
-//     const auto callop_node = call_node->op.as<OpNode>();
-//     std::string callop_name = tvm::runtime::GetRef<Op>(callop_node)->name;
-//     for (auto arg : call_node->args) {
-//       if (arg->IsInstance<CallNode>()){
-//         const CallNode * node = (static_cast<const CallNode *>
-//                                  (arg.get()));
-//         const auto op_node = node->op.as<OpNode>();
-//         std::string argop_name = tvm::runtime::GetRef<Op>(op_node)->name;
-//         if (operator_set.find(argop_name) != operator_set.end()) {
-//           arg = tvm::relay::Call(compiler_end, {VisitExpr(arg)},
-//                                  tvm::Attrs(attrs_default), {});
-//         }
-//         else
-//           arg = tvm::relay::Call(compiler_end, {VisitExpr(arg)},
-//                                  tvm::Attrs(attrs_compiler), {});
-//       }
-//       else if (arg->IsInstance<TupleNode>()) {
-//         // imitate callnode to annotate tuplenode, assume that tuplenode is on the same device
-//         with his consumers const TupleNode* tuplenode = (static_cast<const TupleNode *>
-//                                       (arg.get()));
-//         tvm::Array<Expr> fields;
-//         for (auto field : tuplenode->fields) {
-//           if (field->IsInstance<CallNode>()) {
-//             const CallNode* node = (static_cast<const CallNode *>
-//                                     (field.get()));
-//             const auto op_node = node->op.as<OpNode>();
-//             std::string op_name = tvm::runtime::GetRef<Op>(op_node)->name;
-//             if (operator_set.find(op_name) != operator_set.end()) {
-//               field = tvm::relay::Call(compiler_end, {VisitExpr(field)},
-//                                        tvm::Attrs(attrs_default), {});
-//             }
-//             else {
-//               field = tvm::relay::Call(compiler_end, {VisitExpr(field)},
-//                                        tvm::Attrs(attrs_compiler), {});
-//             }
-//           }
-//           if (operator_set.find(callop_name) != operator_set.end()) {
-//             field = tvm::relay::Call(compiler_begin, {field},
-//                                      tvm::Attrs(attrs_default), {});
-//           }
-//           else {
-//             field = tvm::relay::Call(compiler_begin, {field},
-//                                      tvm::Attrs(attrs_compiler), {});
-//           }
-//           fields.push_back(field);
-//         }
-//         arg = tvm::relay::Tuple(fields, {});
-//       }
-//       if (operator_set.find(callop_name) != operator_set.end()) {
-//         if (arg->IsInstance<TupleNode>()) {
-//           arg = tvm::relay::Call(compiler_end, {arg},
-//                                  tvm::Attrs(attrs_default), {});
-//         }
-//         arg = tvm::relay::Call(compiler_begin, {arg},
-//                                tvm::Attrs(attrs_default), {});
-//       }
-//       else {
-//         if (arg->IsInstance<TupleNode>()) {
-//           arg = tvm::relay::Call(compiler_end, {arg},
-//                                  tvm::Attrs(attrs_compiler), {});
-//         }
-//         arg = tvm::relay::Call(compiler_begin, {arg},
-//                                tvm::Attrs(attrs_compiler), {});
-//       }
-//       call_args.push_back(arg);
-//     }
-//     return tvm::relay::Call(new_op, call_args, call_node->attrs,
-//                             call_node->type_args, call_node->span);
-//   }
-
-//   tvm::relay::Function annotate(tvm::relay::Function func){
-//     auto compiler_begin = tvm::relay::Op::Get("annotation.compiler_begin");
-//     auto compiler_end = tvm::relay::Op::Get("annotation.compiler_end");
-//     auto attrs_compiler = tvm::runtime::make_object
-//       <tvm::relay::CompilerAttrs>();
-//     attrs_compiler->compiler = compiler_;
-//     auto attrs_default = tvm::runtime::make_object
-//       <tvm::relay::CompilerAttrs>();
-//     attrs_default->compiler = default_compiler_;
-//     auto new_expr = VisitExpr(func);
-//     const tvm::relay::FunctionNode * new_funcnode= static_cast<const tvm::relay::FunctionNode
-//     *>(new_expr.get()); const CallNode * node = (static_cast<const CallNode
-//     *>(new_funcnode->body.get())); const auto op_node = node->op.as<OpNode>(); std::string name =
-//     tvm::runtime::GetRef<Op>(op_node)->name; auto new_body = tvm::relay::Call(); if
-//     (operator_set.find(name) != operator_set.end())
-//       new_body = tvm::relay::Call(compiler_end, {new_funcnode->body},
-//                                   tvm::Attrs(attrs_default), {});
-//     else
-//       new_body = tvm::relay::Call(compiler_end, {new_funcnode->body},
-//                                   tvm::Attrs(attrs_compiler), {});
-//     auto new_func = tvm::runtime::GetRef<tvm::relay::Function>(new_funcnode);
-//     return tvm::relay::Function(tvm::relay::FreeVars(new_body), new_body,
-//                                 new_func->ret_type, new_func->type_params,
-//                                 new_func->attrs);
-//   }
-
-//   std::set<std::string> operator_set;
-//   // std::set<std::string> operator_set = {"nn.softmax", "nn.max_pool2d"};
-//   // std::set<std::string> operator_set = {""};
-//   std::string compiler_;
-//   std::string default_compiler_;
-// };
 
 class CollectOutput : public tvm::relay::ExprMutator {
   using Expr = tvm::RelayExpr;
@@ -1105,23 +780,24 @@ class CustomizedAnnotation : tvm::relay::ExprMutator {
             if (arg1->IsInstance<tvm::relay::ConstantNode>()) {
               if (arg_op_name == "nn.conv2d" || arg_op_name == "nn.dense") return false;
             }
-          } else {
-            auto arg1 = call_node->args[1];
-            if (arg1->IsInstance<tvm::relay::CallNode>()) {
-              const tvm::relay::CallNode* arg1_call = arg1.as<tvm::relay::CallNode>();
-              auto* arg1_op_node = arg1_call->op.as<tvm::relay::OpNode>();
-              const auto arg1_op_name = tvm::runtime::GetRef<tvm::relay::Op>(arg1_op_node)->name;
-              if (arg1_op_name == "relay.op.annotation.simulated_quantize" || arg1_op_name == "annotation.cast_hint"
-              || arg1_op_name == "annotation.stop_fusion") {
-                for (auto parent : child_parent_[expr]) {
-                  const tvm::relay::CallNode* parent_call = parent.as<tvm::relay::CallNode>();
-                  auto* parent_op_node = parent_call->op.as<tvm::relay::OpNode>();
-                  const auto parent_op_name = tvm::runtime::GetRef<tvm::relay::Op>(parent_op_node)->name;
-                  if (parent_op_name == "relay.op.annotation.simulated_quantize") return false;
-                }
-              }
-            }
           }
+	  else {
+	    auto arg1 = call_node->args[1];
+	    if (arg1->IsInstance<tvm::relay::CallNode>()) {
+	      const tvm::relay::CallNode* arg1_call = arg1.as<tvm::relay::CallNode>();
+	      auto* arg1_op_node = arg1_call->op.as<tvm::relay::OpNode>();
+	      const auto arg1_op_name = tvm::runtime::GetRef<tvm::relay::Op>(arg1_op_node)->name;
+	      if (arg1_op_name == "relay.op.annotation.simulated_quantize" || arg1_op_name == "annotation.cast_hint"
+		  || arg1_op_name == "annotation.stop_fusion") {
+		for (auto parent : child_parent_[expr]) {
+		  const tvm::relay::CallNode* parent_call = parent.as<tvm::relay::CallNode>();
+		  auto* parent_op_node = parent_call->op.as<tvm::relay::OpNode>();
+		  const auto parent_op_name = tvm::runtime::GetRef<tvm::relay::Op>(parent_op_node)->name;
+		  if (parent_op_name == "relay.op.annotation.simulated_quantize") return false;
+		}
+	      }
+	    }
+	  }
         }
       //} else if (op_name == "reshape" || op_name == "mean" || op_name == "squeeze") {
       } else if (op_name == "reshape" || op_name == "squeeze") {
@@ -1132,13 +808,13 @@ class CustomizedAnnotation : tvm::relay::ExprMutator {
           const auto arg_op_name = tvm::runtime::GetRef<tvm::relay::Op>(arg_op_node)->name;
           if (arg_op_name == "relay.op.annotation.simulated_quantize" || arg_op_name == "annotation.cast_hint"
 	      || arg_op_name == "annotation.stop_fusion") {
-            for (auto parent : child_parent_[expr]) {
-              const tvm::relay::CallNode* parent_call = parent.as<tvm::relay::CallNode>();
-              auto* parent_op_node = parent_call->op.as<tvm::relay::OpNode>();
-              const auto parent_op_name = tvm::runtime::GetRef<tvm::relay::Op>(parent_op_node)->name;
-              if (parent_op_name == "relay.op.annotation.simulated_quantize") return false;
-            }
-          }
+	    for (auto parent : child_parent_[expr]) {
+	      const tvm::relay::CallNode* parent_call = parent.as<tvm::relay::CallNode>();
+	      auto* parent_op_node = parent_call->op.as<tvm::relay::OpNode>();
+	      const auto parent_op_name = tvm::runtime::GetRef<tvm::relay::Op>(parent_op_node)->name;
+	      if (parent_op_name == "relay.op.annotation.simulated_quantize") return false;
+	    }
+	  }
         }
       }
     }
@@ -1192,32 +868,6 @@ class CustomizedAnnotation : tvm::relay::ExprMutator {
 
     bool callop_on_default_device = false;
 
-    // if (callop_name == "relay.op.annotation.simulated_quantize" || callop_name ==
-    // "annotation.stop_fusion" || callop_name == "annotation.cast_hint") {
-    //   LOG(INFO) << AsText(tvm::runtime::GetRef<Expr>(call_node));
-    // }
-
-    // first deal with concatenate op. The arg of concatenate op is a TupleNode, which should be dealt with separately
-    /*
-    if(callop_name == "concatenate") {
-      callop_on_default_device = true;
-      auto tuple_node = call_node->args[0].as<TupleNode>();
-      for(auto arg : tuple_node->fields) {
-        arg = VisitExpr(arg);
-        arg = tvm::relay::Call(compiler_begin, {arg}, tvm::Attrs(attrs_default), {});
-        call_args.push_back(arg);
-      }
-      Expr tuple_result = tvm::relay::Tuple(call_args);
-      tuple_result = tvm::relay::Call(compiler_end, {tuple_result}, tvm::Attrs(attrs_default), {});
-      tuple_result = tvm::relay::Call(compiler_begin, {tuple_result}, tvm::Attrs(attrs_default), {});
-      const Op& cat_op_ = tvm::relay::Op::Get("concatenate");
-      Expr result = tvm::relay::Call(cat_op_, {tuple_result}, call_node->attrs, {});
-      result = tvm::relay::Call(compiler_end, {result}, tvm::Attrs(attrs_default), {});
-      return result;
-    }
-    */
-    //
-    
     for (auto arg : call_node->args) {
       arg = VisitExpr(arg);
 
@@ -1235,14 +885,15 @@ class CustomizedAnnotation : tvm::relay::ExprMutator {
         } else if (arg->IsInstance<VarNode>()) {
           arg = tvm::relay::Call(compiler_begin, {arg}, tvm::Attrs(attrs_default), {});
           callop_on_default_device = true;
-        } else {
-          // ConstantNode or TupleGetItemNode
-          if (callop_on_default_device) {
+        } 
+	else {
+	  // ConstantNode or TupleGetItemNode
+	  if (callop_on_default_device) {
             arg = tvm::relay::Call(compiler_begin, {arg}, tvm::Attrs(attrs_default), {});
           } else {
             arg = tvm::relay::Call(compiler_begin, {arg}, tvm::Attrs(attrs_compiler), {});
           }
-        }
+	}
       } else if (callop_name == "annotation.stop_fusion" || callop_name == "annotation.cast_hint") {
         if (arg->IsInstance<CallNode>()) {
           const CallNode* arg_call = arg.as<tvm::relay::CallNode>();
@@ -1297,25 +948,6 @@ class CustomizedAnnotation : tvm::relay::ExprMutator {
     }
     return result;
   }
-
-  Expr VisitExpr_(const TupleNode* tuple_node) final {
-    auto compiler_begin = tvm::relay::Op::Get("annotation.compiler_begin");
-    auto compiler_end = tvm::relay::Op::Get("annotation.compiler_end");
-    auto attrs_compiler = tvm::runtime::make_object<tvm::relay::CompilerAttrs>();
-    auto attrs_default = tvm::runtime::make_object<tvm::relay::CompilerAttrs>();
-    attrs_compiler->compiler = compiler_;
-    attrs_default->compiler = "riscv";
-
-    tvm::Array<Expr> fields;
-    for (auto field : tuple_node->fields) {
-      field = VisitExpr(field);
-      field = tvm::relay::Call(compiler_begin, {field}, tvm::Attrs(attrs_default), {});
-      fields.push_back(field);
-    }
-    Expr result = tvm::relay::Tuple(fields);
-    result = tvm::relay::Call(compiler_end, {result}, tvm::Attrs(attrs_default), {});
-    return result;
-  }
   
   tvm::relay::Function annotate(tvm::relay::Function func) {
     auto new_expr = VisitExpr(func);
@@ -1354,13 +986,16 @@ class CustomizedAnnotation : tvm::relay::ExprMutator {
                                                {"tanh", 2},
                                                {"nn.dense", 0},
                                                {"mean", 1},
-                                               {"squeeze", 1},
+                                               //////////////////////////
                                                {"nn.max_pool2d", 2},
                                                {"nn.avg_pool2d", 2},
-                                               {"featuretoweight", 2}};
+                                               //////////////////////////
+                                               {"squeeze", 1}};
 
   std::map<std::string, int> dla_operator = {
       {"nn.leaky_relu", 2}, {"nn.dense", 1}, {"nn.conv2d", 2},     {"nn.relu", 2},
+      // {"add", 0},           {"nn.pad", 2},   {"nn.max_pool2d", 2}, {"mean", 0},
+      // {"nn.avg_pool2d", 2}, {"squeeze", 0},  {"clip", 2}/*, {"reshape", 0}*/};
       {"add", 0},           {"nn.pad", 2},   {"nn.max_pool2d", 1}, {"mean", 0},
       {"nn.avg_pool2d", 1}, {"squeeze", 0},  {"clip", 2}/*, {"reshape", 0}*/};
   std::map<Expr, std::vector<Expr>> child_parent_;
@@ -1374,35 +1009,6 @@ tvm::IRModule module_partition(tvm::IRModule module) {
                                               "squeeze",
                                               "nn.max_pool2d",
                                               "nn.avg_pool2d"};
-  // std::set<std::string> riscv_operator_set = {"nn.softmax",
-  //                                             "concatenate",
-  //                                             "image.resize",
-  //                                             "strided_slice",
-  //                                             "reshape",
-  //                                             "multiply",
-  //                                             "exp",
-  //                                             "sigmoid",
-  //                                             "add",
-  //                                             "less",
-  //                                             "where",
-  //                                             "take",
-  //                                             "subtract",
-  //                                             "power",
-  //                                             "sqrt",
-  //                                             "divide",
-  //                                             "nn.batch_matmul",
-  //                                             "transpose",
-  //                                             "expand_dims",
-  //                                             "cast",
-  //                                             "max",
-  //                                             "sum",
-  //                                             "erf",
-  //                                             "split",
-  //                                             "one_hot",
-  //                                             "tanh",
-  //                                             "nn.dense",
-  //                                             "mean",
-  //                                             "squeeze"};
   std::set<std::string> dla_operator_set = {"nn.leaky_relu", "nn.dense", "nn.conv2d",     "nn.relu",
                                             "add",           "nn.pad",   "nn.max_pool2d", "mean",
                                             "nn.avg_pool2d", "squeeze",  "clip"};
@@ -1429,25 +1035,7 @@ tvm::IRModule module_partition(tvm::IRModule module) {
           const auto arg_op_name = tvm::runtime::GetRef<tvm::relay::Op>(arg_op_node)->name;
           if (arg_op_name != "nn.conv2d" && arg_op_name != "nn.dense") return false;
         }
-        // auto shape = tvm::relay::backend::GetShape(arg->checked_type());
-        // auto shape1 = tvm::relay::backend::GetShape(arg1->checked_type());
-        // if (shape.size() != shape1.size())
-        //   return false;
-        // for (size_t i = 0; i < shape.size(); i++) {
-        //   if (shape[i] != shape1[i])
-        //     return false;
-        // }
       }
-      // else if (op_name == "reshape") {
-      //   auto arg = call_node->args[0];
-      //   if (arg->IsInstance<tvm::relay::CallNode>()) {
-      //     const tvm::relay::CallNode* arg_call = arg.as<tvm::relay::CallNode>();
-      //     auto *arg_op_node = arg_call->op.as<tvm::relay::OpNode>();
-      //     const auto arg_op_name = tvm::runtime::GetRef<tvm::relay::Op>(arg_op_node)->name;
-      //     if (arg_op_name != "nn.max_pool2d")
-      //       return false;
-      //   }
-      // }
     }
     return true;
   };
@@ -1484,7 +1072,6 @@ tvm::IRModule module_partition(tvm::IRModule module) {
   };
 
   auto register_op_attr = tvm::relay::backend::GetPackedFunc("ir.RegisterOpAttr");
-  // AIPU. TODO. Is pattern_riscv and pattern_dla used?
   for (auto op_name : riscv_operator_set) {
     (*register_op_attr)(op_name, "target.riscv", pattern_riscv, 10);
   }
@@ -1924,6 +1511,7 @@ std::pair<uint64_t, uint8_t*> CompileFunc4Dla(Function func, std::vector<float> 
   }
   auto funcmod = Downcast<Function>(mod->Lookup("main"));
   funcmod = WithAttr(std::move(funcmod), "global_symbol", symbol_name.value());
+  // LOG(INFO) << AsText(funcmod, false);
 
   // second relay2network follow nvdla
   NvDlaError e = NvDlaError_TestApplicationFailed;
@@ -1969,7 +1557,6 @@ class DenseExpr : public ExprMutator {
 
  public:
   int weight_thr = 7168;//2048;//7168;
-  //int weight_thr = 2048;//2048;//7168;
   bool is_quantize = false;
   bool is_layout_ = false; ///yuaynue for layout
 
@@ -2096,18 +1683,6 @@ class DenseExpr : public ExprMutator {
     }
 
     int64_t spTh = data_shape_row / sp_n_part;
-    // Array<PrimExpr> indices_splitted;
-    // for (int i = 0; i < sp_n_part; i++) {
-      // indices_splitted.push_back(IntImm(DataType::Int(32), spTh));
-    // }
-    // // construct and do MakeSplit
-    // auto attrs = make_object<SplitAttrs>();
-    // attrs->axis = 1;
-    // auto indices = Integer(indices_splitted.size());
-    // attrs->indices_or_sections = std::move(indices);
-    // static const Op& opSp = Op::Get("split");
-    // auto splitted = tvm::relay::Call(opSp, {dense_call->args[0]}, Attrs(attrs));
-
     int index = 0;
     tvm::RelayExpr slice[sp_n_part];
     tvm::RelayExpr dense[sp_n_part];
@@ -2142,15 +1717,7 @@ class DenseExpr : public ExprMutator {
       }else{
         dense[i] = MakeDense(slice[i], weight_split[i], dense_channels,DataType::Float(32));
       }
-	  
-      // auto split_data = TupleGetItem(splitted, index++);
-      // if(is_quantize){
-        // auto splitted_quantize = relay::Call(quantize_op, {split_data, scale_in_[0], scale_in_[1], scale_in_[2]}, Attrs(quantize_attrs), {});
-        // dense[i] = MakeDense(splitted_quantize, weight_split[i], dense_channels,DataType::Float(32));
-      // }else{
-        // dense[i] = MakeDense(split_data, weight_split[i], dense_channels,DataType::Float(32));
-      // }
-      //"add" after dense needed
+
       auto add_op = relay::Op::Get("add");
       auto c_data = tvm::runtime::NDArray::Empty({dense_channels}, {kDLFloat, 32, 1}, {kDLCPU, 0});
       auto c1 = relay::Constant(c_data);
@@ -2183,7 +1750,7 @@ class DenseExpr : public ExprMutator {
     return sp_dense_call;
   }
 
-  Call Layout_weights(const CallNode* op, const CallNode* reshape_call) {
+  Call Layout_weights(const CallNode* op, const CallNode* reshape_call){    
     //const tvm::relay::CallNode* reshape_call = op->args[0].as<tvm::relay::CallNode>();
     if (!reshape_call)
       LOG(FATAL) << "arg error" << AsText(op->args[0], false);
@@ -2392,15 +1959,6 @@ class Conv2dExpr : public ExprMutator {
 	  
       //unsigned int quantize_args_size = 4;
       unsigned int quantize_args_size2 = 4;
-      // if(root_call->op == add_op){
-        // auto quantize_call = conv2d_call->args[0].as<tvm::relay::CallNode>();
-        // quantize_args_size = quantize_call->args.size();
-        // LOG(INFO) << "quantize_args_size:" << quantize_args_size;
-		
-        // auto quantize_call2 = quantize_call->args[0].as<tvm::relay::CallNode>();
-        // quantize_args_size2 = quantize_call2->args.size();
-        // LOG(INFO) << "quantize_args_size:" << quantize_args_size2;
-      // }
 
       Constant scale_in_[quantize_args_size2-1];
       Constant scale_out_[quantize_args_size2-1];
@@ -2422,8 +1980,6 @@ class Conv2dExpr : public ExprMutator {
           quantize_in = conv2d_call->args[0];
         }
         tvm::relay::Expr quantize_out = tvm::runtime::GetRef<Expr>(op);
-        //LOG(INFO) << AsText(quantize_in, false);
-        //LOG(INFO) << AsText(quantize_out, false);
 
         const tvm::relay::CallNode* arg_call_quantize_in = quantize_in.as<tvm::relay::CallNode>();
         for(unsigned int i=1; i<quantize_args_size2; i++){
@@ -2548,21 +2104,7 @@ class Conv2dExpr : public ExprMutator {
       }
 	  
       int64_t spTh = C / sp_n_part;
-      // Array<PrimExpr> indices_splitted;
-      // for (int i = 0; i < sp_n_part; i++) {
-        // indices_splitted.push_back(IntImm(DataType::Int(32), spTh));
-      // }
-	  
-      // //construct and do MakeSplit
-      // auto attrs = make_object<SplitAttrs>();
-      // attrs->axis = 3;
-      // auto indices = Integer(indices_splitted.size());
-      // attrs->indices_or_sections = std::move(indices);
-      // static const Op& opSp = Op::Get("split");
-      // auto splitted = tvm::relay::Call(opSp, {conv2d_call->args[0]}, Attrs(attrs));
-      // //LOG(INFO) << AsText(splitted, false);
-
-      //int index = 0;
+      int index = 0;
       tvm::RelayExpr slice[sp_n_part];
       tvm::RelayExpr conv2d[sp_n_part];
       tvm::RelayExpr conv2d_exp[sp_n_part];
@@ -2617,13 +2159,6 @@ class Conv2dExpr : public ExprMutator {
         }else{
           conv2d[i] = tvm::relay::Call(opC, {slice[i], weight_split[i]}, Attrs(attrs), {});
         }
-		
-        // if(is_quantize){
-          // auto splitted_quantize = relay::Call(quantize_op, {split_data, scale_in_[0], scale_in_[1], scale_in_[2]}, Attrs(quantize_attrs), {});
-          // conv2d[i] = tvm::relay::Call(opC, {splitted_quantize, weight_split[i]}, Attrs(attrs), {});
-        // }else{
-          // conv2d[i] = tvm::relay::Call(opC, {split_data, weight_split[i]}, Attrs(attrs), {});
-        // }	
         
         //"add" after conv2d needed
         auto add_op = relay::Op::Get("add");
@@ -2770,32 +2305,13 @@ class GenCalibdata : public ExprVisitor {
     const auto* op_node = call->op.as<OpNode>();
     const auto op_name = GetRef<Op>(op_node)->name;
 
-    //LOG(INFO) << "test scale op_name: " << op_name;
+    LOG(INFO) << "test scale op_name: " << op_name;
     if (op_name == "relay.op.annotation.simulated_quantize") {
       float scale;
       if (call->args[0]->IsInstance<CallNode>()) {
         const CallNode* arg_call = call->args[0].as<CallNode>();
         auto* arg_op_node = arg_call->op.as<OpNode>();
         const auto arg_op_name = tvm::runtime::GetRef<Op>(arg_op_node)->name;
-        // if (arg_op_name == "mean" || arg_op_name == "nn.max_pool2d" || arg_op_name == "nn.avg_pool2d") {  // Quantitative penetration
-        //   if (arg_call->args[0]->IsInstance<CallNode>()) {
-        //     const CallNode* pre_call = arg_call->args[0].as<CallNode>();
-        //     auto* pre_op_node = pre_call->op.as<OpNode>();
-        //     const auto pre_op_name = tvm::runtime::GetRef<Op>(pre_op_node)->name;
-        //     if (pre_op_name == "relay.op.annotation.simulated_quantize") {
-        //       auto argconst = Downcast<Constant>(pre_call->args[1]);
-        //       scale = *((float*)argconst->data->data);
-        //     } else if (pre_op_name == "annotation.cast_hint") {
-        //       const CallNode* pre_arg_call = pre_call->args[0].as<CallNode>();
-        //       auto argconst = Downcast<Constant>(pre_arg_call->args[1]);
-        //       scale = *((float*)argconst->data->data);
-        //     } else {
-        //       return;
-        //     }
-        //   } else if (arg_call->args[0]->IsInstance<VarNode>()) {
-        //     scale = inscle_vec[0][0];  // Jasper TODO
-        //   }
-        // } 
         if (arg_op_name == "nn.pad" || compiler_ == "dla" && arg_op_name == "reshape") {
           return;
         } else {
@@ -2808,8 +2324,8 @@ class GenCalibdata : public ExprVisitor {
       }
 
       calibdata_.push_back(scale);
-      //LOG(INFO) << "pass relay.op.annotation.simulated_quantize!";
-      //LOG(INFO) << "scale: " << scale;
+      LOG(INFO) << "pass relay.op.annotation.simulated_quantize!";
+      LOG(INFO) << "scale: " << scale;
 
       op_out_scale_map_.insert(std::pair<Expr, float>(call->args[0], scale));
     }
@@ -2825,34 +2341,9 @@ class GenCalibdata : public ExprVisitor {
       const CallNode* call = body.as<CallNode>();
       auto* op_node = call->op.as<tvm::OpNode>();
       const auto op_name = tvm::runtime::GetRef<Op>(op_node)->name;
-      // if (op_name == "mean" || op_name == "nn.max_pool2d" || op_name == "nn.avg_pool2d"){
-      //   if (op_name == "relay.op.annotation.simulated_quantize") { 
-      //   auto argconst = Downcast<Constant>(call->args[1]);
-      //   float scale = *((float*)argconst->data->data);
-      //   subfunc_out_scale.push_back(scale);
-      //   } else if (op_name == "annotation.cast_hint") {
-      //     const CallNode* arg_call = call->args[0].as<CallNode>();
-      //     auto argconst = Downcast<Constant>(arg_call->args[1]);
-      //     float scale = *((float*)argconst->data->data);
-      //     subfunc_out_scale.push_back(scale);
-      //     }
-      //   } 
       if (op_name == "relay.op.annotation.simulated_quantize") { 
         auto argconst = Downcast<Constant>(call->args[1]);
         float scale = *((float*)argconst->data->data);
-        subfunc_out_scale.push_back(scale);
-      } else if (op_name == "annotation.cast_hint") {
-        const CallNode* arg_call = call->args[0].as<CallNode>();
-        auto argconst = Downcast<Constant>(arg_call->args[1]);
-        float scale = *((float*)argconst->data->data);
-        subfunc_out_scale.push_back(scale);
-      }
-      // For extended conv op, we need to add a featuretoweight op. deal with separately
-      else if (call->op == Op::Get("featuretoweight")) {
-        // we assume its arg is relay.op.annotation.simulated_quantize. TODO: what if this is not the case?
-	    const CallNode* arg_call = call->args[0].as<CallNode>();
-	    auto argconst = Downcast<Constant>(arg_call->args[1]);
-	    float scale = *((float*)argconst->data->data);
         subfunc_out_scale.push_back(scale);
       }
     } else if (body->IsInstance<TupleNode>()) {
@@ -2866,22 +2357,7 @@ class GenCalibdata : public ExprVisitor {
             auto argconst = Downcast<Constant>(node->args[1]);
             float scale = *((float*)argconst->data->data);
             subfunc_out_scale.push_back(scale);
-          } else if (op_name == "annotation.cast_hint") {
-            const CallNode* arg_call = node->args[0].as<CallNode>();
-            auto argconst = Downcast<Constant>(arg_call->args[1]);
-            float scale = *((float*)argconst->data->data);
-            subfunc_out_scale.push_back(scale);
-          }
-          // For extended conv op, we need to add a featuretoweight op. deal with separately
-          //else if (field->op == Op::Get("featuretoweight")) {}
-          else if (op_name == "featuretoweight") {
-            // we assume its arg is relay.op.annotation.simulated_quantize. TODO: what if this is not the case?
-            const CallNode* arg_call = node->args[0].as<CallNode>();
-            auto argconst = Downcast<Constant>(arg_call->args[1]);
-            float scale = *((float*)argconst->data->data);
-            subfunc_out_scale.push_back(scale);
-          }
-          else {
+          } else {
             subfunc_out_scale.push_back(-1.0f);
           }
           subfunc_out_Expr.push_back(field);
@@ -2918,12 +2394,14 @@ class GenCalibdata : public ExprVisitor {
   std::string compiler_;
 };
 
+
 // used for traversal fused function
 class TraversalModule : public ExprVisitor {
  public:
   // yuanyue 20220622 plan memory
-  TraversalModule(Map<Expr, Array<IntegerArray>> storage_device_map,  Map<Expr, Array<IntegerArray>> aid_dtype_map, std::map<int, size_t> temporary_data_storage,
-          std::map<int, size_t> temporary_data_offset, size_t total_memory_used) {
+  // yuanyue 20220622 plan memory
+  TraversalModule(Map<Expr, Array<IntegerArray>> storage_device_map,  Map<Expr, Array<IntegerArray>> aid_dtype_map,std::map<int, size_t> temporary_data_storage
+                  , std::map<int, size_t> temporary_data_offset, size_t total_memory_used) {
     storage_device_map_ = storage_device_map;
     aid_dtype_map_ = aid_dtype_map;
     temporary_data_storage_ = temporary_data_storage;
@@ -2944,36 +2422,33 @@ class TraversalModule : public ExprVisitor {
   size_t divRoundUp(size_t size, size_t word_size) { return (size + word_size - 1) / word_size; }
 
   void debug() {
-    std::stringstream log_stream_tmp;
-    LOG(INFO)<< "******************************** temporary_data_offset_ *******************************";
+    LOG(INFO)<< "*********************************temporary_data_offset_********************************";
     for (auto it : temporary_data_offset_)
       LOG(INFO) << "storage_id " << it.first << " offset " << it.second;
 
-    LOG(INFO)<< "******************************** Fused_funtion_offsets ********************************";
-    log_stream_tmp << std::endl;
+    LOG(INFO)<< "*********************************Fused_funtion_offsets********************************";
     for (uint32_t i = 0; i < io_offset_.size(); i++) {
-        log_stream_tmp << i << " -- Fused_funtion_offsets {" << std::endl << "\tinput_offsets:";
+        printf("%d -- Fused_funtion_offsets {\n", i);
+        printf("\tinput_offsets:");
         for (uint32_t j = 0; j < io_offset_[i].input_offsets.size(); j++) {
-            log_stream_tmp << " " << io_offset_[i].input_offsets[j];
+            printf(" %ld,", io_offset_[i].input_offsets[j]);
         }
-        log_stream_tmp << "\n\toutput_offsets:";
+        printf("\n\toutput_offsets:");
         for (uint32_t j = 0; j < io_offset_[i].output_offsets.size(); j++) {
-            log_stream_tmp << " " << io_offset_[i].output_offsets[j];
+            printf(" %ld,", io_offset_[i].output_offsets[j]);
         }
-        log_stream_tmp << "\n\tinput_size:";
+        printf("\tinput_size:");
         for (uint32_t j = 0; j < io_offset_[i].input_size.size(); j++) {
-            log_stream_tmp << " " << io_offset_[i].input_size[j];
+            printf(" %ld,", io_offset_[i].input_size[j]);
         }
-        log_stream_tmp << "\n\toutput_size:";
+        printf("\n\toutput_size:");
         for (uint32_t j = 0; j < io_offset_[i].output_size.size(); j++) {
-            log_stream_tmp << " " << io_offset_[i].output_size[j];
+            printf(" %ld,", io_offset_[i].output_size[j]);
         }
-        log_stream_tmp << "\n\t}\n";
+        printf("\n\t}\n");
     }
-    LOG(INFO)<< log_stream_tmp.str();
-    log_stream_tmp.clear();
 
-    LOG(INFO)<< "********************************* Net_io **********************************************";
+    LOG(INFO)<< "****************************Net_io********************************";
     for (auto i = input_.begin(); i != input_.end(); i++) {
         LOG_INFO << i->first << ", address: " << i->second.first << ", size is " 
             << i->second.second << "\n"; 
@@ -2984,38 +2459,35 @@ class TraversalModule : public ExprVisitor {
              << i->second.second << "\n"; 
     }
 
-    LOG(INFO)<< "******************************** execute_order ****************************************";
-    log_stream_tmp << std::endl;
-    log_stream_tmp << "\tGot execute_order, size is " << execution_order_.size() << std::endl;
+    LOG(INFO)<< "******************************execute_order********************************";
+    LOG_INFO << "\tGot execute_order, size is "
+        << execution_order_.size() << "\n";
     for (uint32_t i = 0; i < execution_order_.size(); i++) {
-        log_stream_tmp << "    " << execution_order_[i];
+        printf("    %d", execution_order_[i]);
     }
-    log_stream_tmp << std::endl;
 
-    log_stream_tmp << "\tGot riscv_addr_list, size is "
-        << riscv_addr_list_.size() << std::endl;
+    LOG_INFO << "\tGot riscv_addr_list, size is "
+        << riscv_addr_list_.size() << "\n";
     for (uint32_t i = 0; i < riscv_addr_list_.size(); i++) {
-        log_stream_tmp << "The " << i << "th task address list is [wt_index, offset]:\n\t{";
+        printf("%d  task address list is [wt_index, offset]:\n\t{", i);
         for (uint32_t j = 0; j < riscv_addr_list_[i].size(); j++) {
-            log_stream_tmp << "[" << riscv_addr_list_[i][j].first << ", " << riscv_addr_list_[i][j].second << "], ";
+            printf("[%d, %ld], ", riscv_addr_list_[i][j].first, riscv_addr_list_[i][j].second);
         }
-        log_stream_tmp << "}" << std::endl;
+        printf(" }\n");
     }
 
-    log_stream_tmp << "\tGot riscv_wt_list, size is " << riscv_wt_list_.size() << std::endl
-        << "task wt list is [size, address]:\n\t{";
-    for (uint32_t i = 0; i < riscv_wt_list_.size(); i++) {
-        log_stream_tmp << "[" << riscv_wt_list_[i].first << ", "<< riscv_wt_list_[i].second << "], ";
-    }
-    log_stream_tmp << "}" << std::endl;
-    LOG(INFO) << log_stream_tmp.str();
-    log_stream_tmp.clear();
+    LOG_INFO << "\tGot riscv_wt_list, size is "
+          << riscv_wt_list_.size() << "\n";
+      printf("task wt list is [size, address]:\n\t{");
+      for (uint32_t i = 0; i < riscv_wt_list_.size(); i++) {
+          printf("[%ld, 0x%08x], ", riscv_wt_list_[i].first, (uint64_t)(riscv_wt_list_[i].second));
+      }
+      printf(" }\n");
 
-    LOG(INFO)<< "******************************** riscv_code_ ******************************************";
-    for (size_t s=0; s<riscv_code_.size();s++ ){
-      LOG(INFO) << std::endl <<  "riscv code " << s;
+    LOG(INFO)<< "*********************************riscv_code_********************************";
+    for (int s=0; s<riscv_code_.size();s++ ){
       std::vector<Cpu_param *> test_riscv_code = riscv_code_[s];
-      for (size_t i =0 ; i < test_riscv_code.size() ; i++ ){
+      for (int i =0 ; i < test_riscv_code.size() ; i++ ){
         u_int32_t op_type = test_riscv_code[i]->cpu_operation.common_only_op.common.op_type;
         if (op_type == tvm::runtime::contrib::SOFTMAX ){
           LOG(INFO) << "************SOFTMAX************";
@@ -3030,7 +2502,7 @@ class TraversalModule : public ExprVisitor {
                   test_riscv_code[i]->cpu_operation_buffer.concat_buffers.dst_data);
           LOG(INFO) << "concat_param axis: " << test_riscv_code[i]->cpu_operation.concat_op.axis;
           LOG(INFO) << "common.input_num: " << test_riscv_code[i]->cpu_operation.concat_op.common.input_num;
-          for (size_t j = 0; j <  test_riscv_code[i]->cpu_operation.concat_op.common.input_num; j++)
+          for (int j = 0; j <  test_riscv_code[i]->cpu_operation.concat_op.common.input_num; j++)
             CodegenAIPU().output_info_other(test_riscv_code[i]->cpu_operation.concat_op.src_data[j]);
 
         }else if (op_type == tvm::runtime::contrib::SPLIT){
@@ -3040,11 +2512,11 @@ class TraversalModule : public ExprVisitor {
                   test_riscv_code[i]->cpu_operation_buffer.split_buffers.dst_data);
           LOG(INFO) << "split_param axis: " << test_riscv_code[i]->cpu_operation.split_op.axis;
           LOG(INFO) << "split_param indices[INPUT_MAX]: " ;
-          for (size_t j=0;j<INPUT_MAX;j++){
+          for (int j=0;j<INPUT_MAX;j++){
             LOG(INFO) << test_riscv_code[i]->cpu_operation.split_op.indices[j];
           }
           LOG(INFO) << "common.output_num: " << test_riscv_code[i]->cpu_operation.split_op.common.output_num;
-          for (size_t j = 0; j <  test_riscv_code[i]->cpu_operation.split_op.common.output_num; j++)
+          for (int j = 0; j <  test_riscv_code[i]->cpu_operation.split_op.common.output_num; j++)
             CodegenAIPU().output_info_other(test_riscv_code[i]->cpu_operation.split_op.dst_data[j]);
 
         }else if (op_type == tvm::runtime::contrib::SUM){
@@ -3118,7 +2590,7 @@ class TraversalModule : public ExprVisitor {
     }
   */
   void preprocess(Network_io &input, Network_io &output) {
-    // weight up limit offset 1.5G. TODO
+    // weight up limit offset 1.5G
     weight_offset_ = 0x5FF00000 ;
 
     input_ = input;
@@ -3238,6 +2710,7 @@ class TraversalModule : public ExprVisitor {
     // Expr expr = GetRef<Expr>(op);
     Function func;
     if (op->op.as<OpNode>()) {
+      // return {};
       LOG(FATAL) << "Operators should be transformed away; try applying"
                  << "the fuse_ops transformation to the expression.";
     } else if (op->op.as<GlobalVarNode>()) {
@@ -3248,6 +2721,8 @@ class TraversalModule : public ExprVisitor {
     } else {
       LOG(FATAL) << "TVM runtime does not support calls to " << op->op->GetTypeKey();
     }
+    //LOG(INFO) << "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@";
+
     //LOG(INFO) << "output: " << storage_device_map_[GetRef<Expr>(op)][0][0] <<",  "
     //<< storage_device_map_[GetRef<Expr>(op)][1][0] <<",  "
     //<< storage_device_map_[GetRef<Expr>(op)][2][0];
@@ -3263,7 +2738,7 @@ class TraversalModule : public ExprVisitor {
     for (size_t i = 0; i < istorage_id.size(); i++) {
       input_offsets.push_back(temporary_data_offset_[istorage_id[i]]);
     }
-    for (size_t i=0; i<ostorage_id.size(); i++) {
+    for (int i=0; i<ostorage_id.size(); i++) {
       output_offset.push_back(temporary_data_offset_[ostorage_id[i]]);
     }
     fused_function_offsets.output_offsets = output_offset;
@@ -3274,7 +2749,7 @@ class TraversalModule : public ExprVisitor {
     std::string compiler = func->GetAttr<String>(attr::kCompiler).value();
     // LOG(INFO) << compiler;
     if (compiler == "riscv") {
-      LOG(INFO) << "(DLA) riscv func: " << AsText(func, false);
+      LOG(INFO) << "(DLA ) riscv func: " << AsText(func, false);
       auto genCalibdata = GenCalibdata(i_scale_Vec, "riscv");
       genCalibdata.VisitExpr(func->body);
       auto calibdata = genCalibdata.GetCalibdata();
@@ -3285,7 +2760,7 @@ class TraversalModule : public ExprVisitor {
         scale_function_map_.insert(std::pair<Expr, std::vector<float>>(GetRef<Expr>(op), subfunc_in_scale));
       }
 
-      // yuanyue 20220622 plan memory, need to add CompileFunc4Riscv
+      /////yuanyue 20220622 plan memory ,need to add CompileFunc4Riscv
       Map<Expr, Array<IntegerArray>> storage_input_output_map; //expr id offset
       std:: vector <Expr> params;
       for (Var param : func->params) {     
@@ -3293,7 +2768,7 @@ class TraversalModule : public ExprVisitor {
       }
       if (1){
         std::vector<Integer> offsets;
-        for (size_t i = 0; i < output_offset.size(); i++){
+        for (int i = 0; i < output_offset.size(); i++){
           offsets.push_back(output_offset[i]);
         }
         ///yuanyue 20220621 quantized
@@ -3305,7 +2780,7 @@ class TraversalModule : public ExprVisitor {
       for (auto arg : op->args) {
         //std::vector<Integer> storage_ids;      
         std::vector<Integer> offsets;
-        for (size_t i =0; i < storage_device_map_[arg][0].size(); i++){
+        for (int i =0; i < storage_device_map_[arg][0].size(); i++){
           int storage_id = storage_device_map_[arg][0][i];
           offsets.push_back(temporary_data_offset_[storage_id]);
         }
@@ -3483,6 +2958,7 @@ class TraversalModule : public ExprVisitor {
 };
 
 runtime::Module CompileAipuFunc(Function func) {
+  // LOG(INFO) << AsText(func, false);
   // some pass required global_symbol to be main
   func = WithAttr(std::move(func), "global_symbol", runtime::String("main"));
 
@@ -3490,18 +2966,13 @@ runtime::Module CompileAipuFunc(Function func) {
   auto fDenseSp = DenseFunc.VisitExpr(func->body);
   auto mod_split = IRModule::FromExpr(fDenseSp);
   mod_split = transform::InferType()(mod_split);
+  // LOG_INFO << "mod_split " << AsText(mod_split, false);
   auto func_split = Downcast<Function>(mod_split->Lookup("main"));
-
-  auto mod_batchmatmul = IRModule::FromExpr(func_split);
-  mod_batchmatmul = transform::InferType()(mod_batchmatmul);
-  mod_batchmatmul = transform::BatchMatMulTransform()(mod_batchmatmul);
-  mod_batchmatmul = transform::FeatureToWeightTransform()(mod_batchmatmul);
-  auto func_batchmatmul = Downcast<Function>(mod_batchmatmul->Lookup("main"));
   
   CollectOutput collectoutput;
-  collectoutput.VisitExpr(func_batchmatmul->body);
+  collectoutput.VisitExpr(func_split->body);
   CustomizedAnnotation custom("dla", collectoutput.child_parent);
-  auto new_func = custom.annotate(func_batchmatmul);
+  auto new_func = custom.annotate(func_split);
   
   // Conv2dExpr Conv2dFunc;
   // auto fConv2dSp = Conv2dFunc.VisitExpr(func->body);
@@ -3522,27 +2993,20 @@ runtime::Module CompileAipuFunc(Function func) {
   // auto new_func = custom.annotate(func);
 
   auto mod = IRModule::FromExpr(new_func);
-
+  // LOG(INFO) << AsText(mod, false);
   // the first partition
   // mod = module_partition(mod);
-  // LOG_INFO << "before merge: " << AsText(mod, false);
   mod = relay::transform::MergeCompilerRegions()(mod);
-  // LOG_INFO << "after merge: " << AsText(mod, false);
   mod = relay::transform::PartitionGraph()(mod);
-  // LOG_INFO << "after partition: " << AsText(mod, false);
-
   mod = transform::FuseOps()(mod);
   mod = transform::Inline()(mod);
   mod = transform::InferType()(mod);
+  // LOG(INFO) << AsText(mod, false);
   // the second partition
   mod = eliminate_tuplenode(mod);
   LOG(INFO) << AsText(mod, false);
 
-  // this pass is used to save the RISC-V relay subfunctions
-  //mod = transform::subfunctionsWriterTransform()(mod);
-  //
-
-  //yuanyue 20220713 aid_dtype
+ //yuanyue 20220713 aid_dtype
   Map<Expr, Array<IntegerArray>> aid_dtype_map;
   aid_dtype_map = AidDtypeExpr().GetAidDtype(Downcast<Function>(mod->Lookup("main")));
 
@@ -3558,6 +3022,8 @@ runtime::Module CompileAipuFunc(Function func) {
   total_memory_used = storage_allocator.GetTotalMemory();
   temporary_data_storage = storage_allocator.GetDataStorage();
   temporary_data_offset = storage_allocator.GetDataOffset();
+
+  
 
   Network_io input;
   Network_io output;
@@ -3578,10 +3044,12 @@ runtime::Module CompileAipuFunc(Function func) {
     output.insert(std::pair<std::string, std::pair<size_t, size_t>>(name, pa));
   }
 
+
   //auto traversal_module = TraversalModule(storage_device_map);
   auto traversal_module = TraversalModule(storage_device_map, aid_dtype_map, temporary_data_storage, temporary_data_offset, total_memory_used);
   traversal_module.preprocess(input, output);
   traversal_module.VisitExpr(Downcast<Function>(mod->Lookup("main"))->body);
+
 
   //traversal_module.debug();
   return traversal_module.AIPUModuleCreate();

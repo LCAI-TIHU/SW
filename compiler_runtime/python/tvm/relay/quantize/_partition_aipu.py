@@ -21,6 +21,7 @@
 # This is a new or modified file.
 #
 
+
 """Internal module for registering attribute for annotation."""
 import tvm
 from .. import expr as _expr
@@ -32,12 +33,6 @@ from ._partition import QPartitionExpr
 
 def register_aipu_partition_function(op_name, frewrite=None, level=10):
     return tvm.ir.register_op_attr(op_name, "FQAipuPartitionRewrite", frewrite, level)
-
-
-# @tvm._ffi.register_object("relay.QPartitionExpr")
-# class QPartitionExpr(_expr.TempExpr):
-#     def __init__(self, expr):
-#         self.__init_handle_by_constructor__(_quantize.make_partition_expr, expr)
 
 
 def partition_expr_check(expr):
@@ -69,9 +64,6 @@ def identity_partition_function(ref_call, new_args, ctx):
 register_aipu_partition_function("clip", identity_partition_function)
 register_aipu_partition_function("nn.relu", identity_partition_function)
 register_aipu_partition_function("nn.leaky_relu", identity_partition_function)
-# register_aipu_partition_function("nn.max_pool2d", identity_partition_function)
-# register_aipu_partition_function("nn.sigmoid", identity_partition_function)
-
 
 def add_partition_generic(ref_call, new_args, ctx):
     """Rewrite function for ewise add for partition for generic devices"""
@@ -161,20 +153,5 @@ def add_partition_function(ref_call, new_args, ctx):
     return add_partition_generic(ref_call, new_args, ctx)
 
 
-# @register_aipu_partition_function("multiply")
-# def multiply_partition_function(ref_call, new_args, ctx):
-#     """Rewrite function for ewise multiply for partition"""
-#     return mul_partition_generic(ref_call, new_args, ctx)
 
-
-# add cast after the relu op to make it run on vta
-# @register_aipu_partition_function("nn.global_avg_pool2d")
-# def global_avg_pool2d_partition_function(ref_call, new_args, ctx):
-#     cond, expr = partition_expr_check(new_args[0])
-#     if cond:
-#         expr = new_args[0].realize()
-#     else:
-#         expr = QPartitionExpr(new_args[0]).realize()
-
-#     return QPartitionExpr(_forward_op(ref_call, [expr]))
 
