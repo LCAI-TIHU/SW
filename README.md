@@ -22,6 +22,18 @@ CNN models and accuracy:
 | 5 | detection | YOLOv3 | 0.548 | 0.562|
 | 6 | NLP | bert-base | - | - |
 
+At present, following operators are supported. Intrinsic operators will be done.
+
+| category | operators |
+|----------|-----------|
+| convolution | Conv, Transposed Conv, Dilated Conv, Spatially Separable Conv, Depthwise Separable Conv, Grouped Convolution, Flattened Conv |
+| activation | ReLU, ReLU6, P-ReLU, LeakyReLU, Sigmoid |
+| fusion | CBR(Conv + BN + Relu), CB(Conv + BN) |
+| pool | Max Pooling, Average Pooling, Upsample |
+| dense | matrix multiplication, FC |
+| Eltwise | Elemet-wise |
+| other | Softmax, BatchNorm, Add, sub, div, multiply, power, slice, reshape, concate, expf, tanh, mean, cast, transpose, take, one_hot, expand, dense, batch_matmul, squeeze, resize, reduce, split, pool2D, etc. |
+
 Example of yolov3:  
 <div align=center>
 <img src="./doc/yolov3.jpg" width="400" height="400" alt="TIHU"/><br/>
@@ -34,22 +46,14 @@ TIHU software include compiler, runtime, xdma driver and firmware.
 <img src="./doc/compiler_structure.png" width="600" height="400" alt="TIHU"/><br/>
 </div>
 
-Compiler and runtime are designed based on TVM and integrate the compiler and runtime of nvdla. Compiler consists of parser, optimizer, codegen, operator libraries.
-CNN models are compiled into computing tasks with different device type and submitted to device by runtime. The host interacts with the device though PCIe drived by Xilinx xdma driver.
+### Compiler and runtime
 
-Firmware consists of dla driver and cpu operators. Firmware workflow can be found in README of firmware. 
+Compiler and runtime are designed based on TVM . Compiler consists of parser, optimizer, codegen, operator libraries.
+CNN models are compiled into computing tasks with different device type and submitted to device by runtime. The host interacts with the device though PCIe.
 
-At present, following operators are supported. Intrinsic operators will be done.
+### Firmware
 
-| category | operators |
-|----------|-----------|
-| convolution | Conv, Transposed Conv, Dilated Conv, Spatially Separable Conv, Depthwise Separable Conv, Grouped Convolution, Flattened Conv |
-| activation | ReLU, ReLU6, P-ReLU, LeakyReLU, Sigmoid |
-| fusion | CBR(Conv + BN + Relu), CB(Conv + BN) |
-| pool | Max Pooling, Average Pooling, Upsample |
-| dense | matrix multiplication, FC |
-| Eltwise | Elemet-wise |
-| other | Softmax, BatchNorm, Add, sub, div, multiply, power, slice, reshape, concate, expf, tanh, mean, cast, transpose, take, one_hot, expand, dense, batch_matmul, squeeze, resize, reduce, split, pool2D, etc. |
+ TIHU hardware is driven by firmware to complete computing tasks submitted by runtime. More information about firmware can be found in readme of firmware. 
 
 ## TIHU software workflow
 
