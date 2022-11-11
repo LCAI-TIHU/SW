@@ -2,20 +2,14 @@
 
 ## Introduction
 
-TIHU is an AI computing platform based on RISC-V instruction set. It provides software stack and hardware stack, and is a complete set of solutions that can verify different AI frameworks and AI algorithms.   
+TIHU is an AI computing development platform based on RISC-V instruction set. It provides software stack and hardware, and is a complete set of solutions that can verify different AI frameworks and AI algorithms.   It can also be used to explore the current AI open source ecology, such as RISC-V instruction set, deep-learning accelerator, AI compiler &  runtime, AI algorithms and frameworks.   TIHU will accelerate the implementation of your AI algorithms.
 
-TIHU is designed based on a variety of open source projects, including [cva6](https://github.com/openhwgroup/cva6), ara (https://github.com/pulp-platform/ara), nvlda (https://github.com/nvdla),
-xdma (https://github.com/Xilinx/dma_ip_drivers/tree/master/XDMA/linux-kernel) and TVM (https://github.com/apache/tvm), to explore the current AI open source ecology and accelerate the implementation of AI algorithms. 
-
-In this project, we can explore RISC-V instruction set, deep-learning accelerator, AI compiler &  runtime, AI algorithms and AI frameworks.
-
-Currently, TIHU only supports tensorflow. Pytorch will be supported very soon. Several CNN models have been tested on Inspur F37X card.
+Currently, TIHU only supports tensorflow. Pytorch will be supported very soon. Several CNN models have been tested on Inspur F37X card, as shown below. 
 
 <div align=center>
 <img src="./doc/F37X.png" width="300" height="500" alt="TIHU"/><br/>
 </div>
-
-    
+   
 CNN models and accuracy  
 | num | category | CNN model | TIHU(int8) accuracy | llvm(float) accuracy|
 |---|----------------|-------|--------|------|
@@ -25,6 +19,11 @@ CNN models and accuracy
 | 4 | classification | VGG16 | 0.627 | 0.629 |
 | 5 | detection | YOLOv3 | 0.548 | 0.562|
 | 6 | NLP | bert-base | - | - |
+
+Example of yolov3
+<div align=center>
+<img src="./doc/yolov3.jpg" width="400" height="400" alt="TIHU"/><br/>
+</div>
 
 ## TIHU software structure 
 TIHU software include compiler, runtime, xdma driver and firmware.
@@ -113,13 +112,13 @@ $ cd /workspace/SW/compiler_runtime/demo
 $ python3 from_tensorflow_quantize_lenet.py 2>&1 | tee lenet.log
 
 ```   
-This photo is the result of yolov3.
 
-<div align=center>
-<img src="./doc/yolov3.jpg" width="400" height="400" alt="TIHU"/><br/>
-</div>
+# TODO
 
-# Road Map   
+# Acknowledgements  
+
+TIHU is designed based on a variety of open source projects, including [cva6](https://github.com/openhwgroup/cva6), [ara](https://github.com/pulp-platform/ara), [nvlda](https://github.com/nvdla),
+[xdma](https://github.com/Xilinx/dma_ip_drivers/tree/master/XDMA/linux-kernel) and [TVM](https://github.com/apache/tvm). If you want to learn more about these models, check out their websit.
 
 # License
 
