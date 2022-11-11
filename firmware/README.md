@@ -1,24 +1,27 @@
 # TIHU FIRMWARE
 # Introduction
 TIHU runs in barematel mode, and is driven by firmware to complete computing tasks submitted by RUNTIME. TIHU is comprised of RISC-V cpu, nvdla, NoC bus, PCIe module, DDR, SRAM, bootROM, DMA and peripherals.  
-Parameters:  
-* Support RISC-V instruction set: RV64gcv0p10;  
-* Nvdla config:  
-* Memory: DDR -- 2GB, SRAM -- 4MB, ROM -- 128KB;
-* SoC frequency: 20MHz;  
-* SoC systerm: baremetal;
-* Debug: uart;
+
+SOC parameters:  
+* Support RISC-V instruction set: RV64gcv0p10.
+* RISCV vector config: 1024-bit vector length, up to 128-bits of data per cycle.
+* Nvdla config:  bdma + conv(64*32 int8 data per cycle) + sdp(128-bits).
+* Memory: DDR -- 2GB, SRAM -- 4MB, ROM -- 128KB.
+* SoC frequency: 20MHz.  
+* SoC systerm: baremetal.
+* Debug: uart, baud rate is 115200.
+
 
 <div align=center>
 <img src="../doc/AIPU_structure.png" width="600" height="300" alt="TIHU"/><br/>
 </div>
 
 # The workflow of TIHU  
-* Initialize CPU clock, serial, timer and interrupt;    
-* Wait for computing tasks submitted by RUNTIME;  
-* RUNTIME submits task-list and address-list to TIHU, and raise PCIe interrupt to CPU;  
-* Firmware assigns computing tasks to CPU or DLA based on device type;  
-* Host interrupt will be raised when all tasks are completed;  
+* Initialize CPU clock, serial, timer and interrupt.    
+* Wait for computing tasks submitted by RUNTIME.  
+* RUNTIME submits task-list and address-list to TIHU, and raise PCIe interrupt to CPU.  
+* Firmware assigns computing tasks to CPU or DLA based on device type.  
+* Host interrupt will be raised when all tasks are completed.  
 <div align=center>
 <img src="../doc/firmware_workflow.png" width="500" height="450" alt="TIHU"/><br/>
 </div>
