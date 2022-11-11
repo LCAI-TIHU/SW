@@ -18,9 +18,9 @@ except ImportError:
 # Tensorflow utility functions
 import tvm.relay.testing.tf as tf_testing
 
-image_path = "/path/image_dir"
-label_path = "/path/image_dir"
-model_path = "/path/model_file"
+image_path = "/workspace/mnist/t10k-images-idx3-ubyte"
+label_path = "/workspace/mnist/t10k-labels-idx1-ubyte"
+model_path = "/workspace/tfmodel/frozen_lenet_3.pb"
 layout = "NHWC"
 calibration_samples = 1000 
 weight_scale = "channel_max"
@@ -103,7 +103,7 @@ def create_graph(model_path):
 
   
 def run_test(lib, origin_shape=None):
-    image = cv2.imread("/path/image_file", 0)
+    image = cv2.imread("/workspace/testimage/00000_7.jpg", 0)
     image = np.expand_dims(image, axis=-1)
     image = image / 128.0 - 1.0
     global target
@@ -213,6 +213,7 @@ if __name__ == '__main__':
     with tvm.transform.PassContext(opt_level=3):
         lib = relay.build(mod_quantized, target, params=params)
     aipu_output = run_test(lib, origin_shape)
+    ## test the entire data set
     run_inference(lib)
    
     # Finish
