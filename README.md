@@ -128,6 +128,10 @@ $ python3 from_tensorflow_quantize_lenet.py 2>&1 | tee lenet.log
 
 # TODO
 
+A serial of optimation will be done.  
+* support multi-process.  
+* Optimize the operators and compiler to improve the computational efficiency.  
+
 # Acknowledgements  
 
 TIHU is designed based on a variety of open-source projects, including [cva6](https://github.com/openhwgroup/cva6), [ara](https://github.com/pulp-platform/ara), [nvlda](https://github.com/nvdla),
