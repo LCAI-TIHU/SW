@@ -136,7 +136,7 @@ A serial of optimation will be done.
 # Acknowledgements  
 
 TIHU is designed based on a variety of open-source projects, including [cva6](https://github.com/openhwgroup/cva6), [ara](https://github.com/pulp-platform/ara), [nvlda](https://github.com/nvdla),
-[xdma](https://github.com/Xilinx/dma_ip_drivers/tree/master/XDMA/linux-kernel) and [TVM](https://github.com/apache/tvm). If you want to learn more about these models, check out their websit.
+[xdma](https://github.com/Xilinx/dma_ip_drivers/tree/master/XDMA/linux-kernel), and [TVM](https://github.com/apache/tvm). If you want to learn more about these models, check out their website.
 
 # License
 
