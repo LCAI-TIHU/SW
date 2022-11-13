@@ -2,11 +2,11 @@
 
 ## Introduction
 
-TIHU is an AI computing development platform based on RISC-V instruction set. It provides software stack and hardware, and is a complete set of solutions that can verify different AI frameworks and AI algorithms.   It can also be used to explore the current AI open source ecology, such as RISC-V instruction set, deep-learning accelerator, AI compiler &  runtime, AI algorithms and frameworks.   
+TIHU is an AI computing development platform based on the RISC-V instruction set. It provides software stack and hardware and is a complete set of solutions that can verify different AI frameworks and AI algorithms.   It can also be used to explore the current AI open sources ecology, such as RISC-V instruction set, deep-learning accelerator, AI compiler &  runtime, AI algorithms, and frameworks.      
 
 TIHU will accelerate the implementation of your AI algorithms.
 
-Currently, TIHU only supports tensorflow. Pytorch will be supported very soon. Several CNN models have been tested on Inspur F37X card, as shown below. 
+Currently, TIHU only supports TensorFlow. Pytorch will be supported very soon. As shown below, several CNN models have been tested on the Inspur F37X card. 
 
 <div align=center>
 <img src="./doc/F37X.png" width="300" height="500" alt="TIHU"/><br/>
@@ -22,7 +22,7 @@ CNN models and accuracy:
 | 5 | detection | YOLOv3 | 0.548 | 0.562|
 | 6 | NLP | bert-base | - | - |
 
-At present, following operators are supported. Intrinsic operators will be done.
+At present, the following operators are supported. Intrinsic operators will be done.
 
 | category | operators |
 |----------|-----------|
@@ -50,7 +50,7 @@ Example of yolov3:
 └── LICENSE  
 
 ## TIHU software structure 
-TIHU software include compiler, runtime, xdma driver and firmware.
+TIHU software include compiler, runtime, xdma driver, and firmware.
 
 <div align=center>
 <img src="./doc/compiler_structure.png" width="600" height="400" alt="TIHU"/><br/>
@@ -58,16 +58,16 @@ TIHU software include compiler, runtime, xdma driver and firmware.
 
 ### Compiler and runtime
 
-Compiler and runtime are designed based on TVM . Compiler consists of parser, optimizer, codegen, operator libraries.
-CNN models are compiled into computing tasks with different device type and submitted to device by runtime. The host interacts with the device though PCIe.
+The compiler and runtime are designed based on TVM. The compiler consists of the parser, optimizer, codegen, and operator libraries.
+CNN models are compiled into computing tasks with different device types and submitted to the device by the runtime. The host interacts with the device through PCIe.
 
 ### Driver
 
-TIHU driver is designed based on Xilinx PCIe DMA driver, so as the firmware download program. More information about driver can be found in readme of xdma.
+TIHU driver is designed based on Xilinx PCIe DMA driver, so as the firmware download program. More driver information can be found in the readme of xdma.
 
 ### Firmware
 
- TIHU hardware is driven by firmware to complete computing tasks submitted by runtime. More information about firmware can be found in readme of firmware. 
+TIHU hardware is driven by firmware to complete computing tasks submitted by the runtime. More information about firmware can be found in the readme of the firmware. 
 
 ## TIHU software workflow
 
@@ -93,7 +93,7 @@ $ source build.sh
 ```
 
 2. build compiler and runtime with dockefile   
-We provide two versions of dockerfile, you can choose by yourself, which will have a positive effect on your build efficiency
+We provide two versions of dockerfile, which you can choose by yourself, which will positively affect your build efficiency.  
 ```bash
 $ git clone https://github.com/LCAI-TIHU/SW.git
 $ cd SW/docker && sudo docker build -t tihu_software:v1 -f TIHU.Dockerfile .
@@ -127,7 +127,7 @@ $ python3 from_tensorflow_quantize_lenet.py 2>&1 | tee lenet.log
 
 # Acknowledgements  
 
-TIHU is designed based on a variety of open source projects, including [cva6](https://github.com/openhwgroup/cva6), [ara](https://github.com/pulp-platform/ara), [nvlda](https://github.com/nvdla),
+TIHU is designed based on a variety of open-source projects, including [cva6](https://github.com/openhwgroup/cva6), [ara](https://github.com/pulp-platform/ara), [nvlda](https://github.com/nvdla),
 [xdma](https://github.com/Xilinx/dma_ip_drivers/tree/master/XDMA/linux-kernel) and [TVM](https://github.com/apache/tvm). If you want to learn more about these models, check out their websit.
 
 # License
