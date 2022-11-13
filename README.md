@@ -131,6 +131,7 @@ $ python3 from_tensorflow_quantize_lenet.py 2>&1 | tee lenet.log
 A serial of optimation will be done.  
 * support multi-process.  
 * Optimize the operators and compiler to improve the computational efficiency.  
+* ...  
 
 # Acknowledgements  
 
