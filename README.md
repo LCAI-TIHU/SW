@@ -98,6 +98,7 @@ We provide two versions of dockerfile, which you can choose by yourself, which w
 $ git clone https://github.com/LCAI-TIHU/SW.git
 $ cd SW/docker && sudo docker build -t tihu_software:v1 -f TIHU.Dockerfile .
 $ sudo docker run -it --network=host -v /your/SW/path/:/workspace -v /dev:/dev --privileged=true --name tihu_software tihu_software:v1 /bin/bash
+$ cd /workspace && git clone https://github.com/LCAI-TIHU/SW.git
 $ cd /workspace/SW/compiler_runtime
 $ source env.sh && source build.sh 
 
