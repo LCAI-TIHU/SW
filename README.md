@@ -63,11 +63,11 @@ CNN models are compiled into computing tasks with different device types and sub
 
 ### Driver
 
-TIHU driver is designed based on Xilinx PCIe DMA driver, so as the firmware download program. More driver information can be found in the readme of xdma.
+TIHU driver is designed based on Xilinx PCIe DMA driver, so as the firmware download program. More driver information can be found in the readme of the [xdma](https://github.com/LCAI-TIHU/SW/tree/main/firmware).
 
 ### Firmware
 
-TIHU hardware is driven by firmware to complete computing tasks submitted by the runtime. More information about firmware can be found in the readme of the firmware. 
+TIHU hardware is driven by firmware to complete computing tasks submitted by the runtime. More firmware information can be found in the readme of the [firmware](https://github.com/LCAI-TIHU/SW/tree/main/firmware). 
 
 ## TIHU software workflow
 
@@ -103,6 +103,8 @@ $ source env.sh && source build.sh
 
 ```
 # Build FPGA
+
+Go to [TIHU-HW](https://github.com/LCAI-TIHU/HW).
 
 # Quickstart
 
