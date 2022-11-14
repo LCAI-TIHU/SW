@@ -446,6 +446,8 @@ TVM_DLL Pass MergeCompilerRegions();
 TVM_DLL Pass BatchMatMulTransform();
 TVM_DLL Pass FeatureToWeightTransform();
 TVM_DLL Pass subfunctionsWriterTransform();
+TVM_DLL Pass AIPU_fuse_GELU();
+TVM_DLL Pass AIPU_fuse_NORM();
 
 
 }  // namespace transform

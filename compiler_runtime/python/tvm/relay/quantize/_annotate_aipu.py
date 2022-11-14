@@ -35,6 +35,7 @@ from .quantize import QAnnotateKind, current_qconfig, quantize_context
 from .quantize import _forward_op
 from ._annotate import QAnnotateExpr, attach_simulated_quantize
 
+if_prequantize_weight = False
 
 def _get_expr_kind(anno):
     """Get the expression and QAnnotateKind from QAnnotateExpr or Expr"""
@@ -100,10 +101,13 @@ def conv2d_rewrite(ref_call, new_args, ctx):
         lhs_expr = attach_simulated_quantize(lhs_expr, QAnnotateKind.INPUT)
 
     assert rhs_kind is None
-    axis = -1
-    if ref_call.attrs["groups"] == ref_call.attrs["channels"] and ref_call.attrs["groups"] != 1:
-        axis = 2
-    rhs_expr = attach_simulated_quantize(rhs_expr, QAnnotateKind.WEIGHT, True, "round", axis)
+    #
+    if if_prequantize_weight:
+        axis = -1
+        if ref_call.attrs["groups"] == ref_call.attrs["channels"] and ref_call.attrs["groups"] != 1:
+            axis = 2
+        rhs_expr = attach_simulated_quantize(rhs_expr, QAnnotateKind.WEIGHT, True, "round", axis)
+    #
 
 
     expr = _forward_op(ref_call, [lhs_expr, rhs_expr])
@@ -171,7 +175,10 @@ def dense_rewrite(ref_call, new_args, ctx):
         lhs_expr = attach_simulated_quantize(lhs_expr, QAnnotateKind.INPUT)
 
     assert rhs_kind is None
-    rhs_expr = attach_simulated_quantize(rhs_expr, QAnnotateKind.WEIGHT, axis=0)
+    #
+    if if_prequantize_weight:
+        rhs_expr = attach_simulated_quantize(rhs_expr, QAnnotateKind.WEIGHT, axis=0)
+    #
 
     expr = _forward_op(ref_call, [lhs_expr, rhs_expr])
     # quantize_context().stop_quantize()
@@ -207,6 +214,10 @@ def add_rewrite(ref_call, new_args, ctx):
             # rhs_expr = attach_simulated_quantize(rhs_expr, QAnnotateKind.WEIGHT)
             pass
         else:
+            # TODO: This is only an ad hoc approach to deal with the bug for the node "bert/encoder/layer_0/intermediate/dense/add" in bert-base model
+            if rhs_expr.op == tvm.ir.op.Op.get("multiply"):
+                return _forward_op(ref_call, [lhs_expr, rhs_expr])
+            ##
             rhs_expr = attach_simulated_quantize(rhs_expr, QAnnotateKind.INPUT)
             expr = _forward_op(ref_call, [lhs_expr, rhs_expr])
             return expr

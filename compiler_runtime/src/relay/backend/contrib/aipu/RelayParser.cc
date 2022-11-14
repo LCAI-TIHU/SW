@@ -959,56 +959,13 @@ const IBlobNameToTensor* RelayParser::parse(const char* deployFile,
     assert(mDimsCallback == 0);
     gLogInfo<<"relay parse"<<std::endl;
     if (!mDimsCallback) {
-        //gLogInfo<<"nvdla network begin if"<<std::endl;
         mDimsCallback = new RelayParserPoolingDimsCallback;//
     }
-    //gLogInfo<<"nvdla network begin"<<std::endl;
 
     network->setPoolingOutputDimensionsFormula(mDimsCallback);
 
-    // this is used to deal with dropout layers which have different input and output
-    // mModel = new dc::NetParameter();
-    // if (!readBinaryProto(mModel/*.get()*/, modelFile, mProtobufBufferSize))
-    // {
-    //     gLogError << "Could not parse model file" << std::endl;
-    //     return 0;
-    // }
-
-    // mDeploy = new dc::NetParameter();
-    // if (!readTextProto(mDeploy/*.get()*/, deployFile))
-    // {
-    //     gLogError << "Could not parse deploy file" << std::endl;
-    //     return 0;
-    // }
-
     bool ok = true;
-    //RelayWeightFactory weights(*mModel/**mModel.get()*/,
-                               //false /*weightType == DataType::kHALF*/, mTmpAllocs);
-
     mBlobNameToTensor = new BlobNameToTensor();
-    /*for (int i = 0; i < mDeploy->input_size(); i++)
-    {
-        nvdla::Dims4 dims;
-        if (mDeploy->input_shape_size()) {
-            dims.n = (int)mDeploy->input_shape().Get(i).dim().Get(0);
-            dims.c = (int)mDeploy->input_shape().Get(i).dim().Get(1);
-            dims.h = (int)mDeploy->input_shape().Get(i).dim().Get(2);
-            dims.w = (int)mDeploy->input_shape().Get(i).dim().Get(3);
-        }
-        else { // deprecated, but still used in a lot of networks
-            dims.n = (int)mDeploy->input_dim().Get(i * 4 + 0);
-            dims.c = (int)mDeploy->input_dim().Get(i * 4 + 1);
-            dims.h = (int)mDeploy->input_dim().Get(i * 4 + 2);
-            dims.w = (int)mDeploy->input_dim().Get(i * 4 + 3);
-        }
-
-        nvdla::ITensor* tensor = network->addInput(mDeploy->input().Get(0).c_str(), dims);
-        mBlobNameToTensor->add(mDeploy->input().Get(0), tensor);
-        LOG(INFO)<<"mDeploy->input().Get(0).c_str()"<<mDeploy->input().Get(0).c_str();
-        LOG(INFO)<<"mDeploy->input().Get(0)"<<mDeploy->input().Get(0);
-
-    }*/
-    //获取func input name
     for (auto arg : func->params) {
         const auto& name = arg->name_hint();
         //LOG(INFO)<<"fucn param name:"<<name;
@@ -1056,89 +1013,17 @@ const IBlobNameToTensor* RelayParser::parse(const char* deployFile,
             else{
                 LOG(FATAL) << "riscv not suppose shape size: " << shape.size();
             }
-            //LOG(INFO) << "ITensor dims: " << dims.n << " " << dims.c << " " << dims.h << " " <<  dims.w;
             nvdla::ITensor* tensor = network->addInput(name.c_str(), dims);
             mBlobNameToTensor->add((std::string)name.c_str()/*"data"*/, tensor);
         }
     }
-    //conver every layer
     ICHECK(func.defined()) << "Input error: expect a Relay function.";
     auto sid = GetExtSymbol(func);
     // Record the external symbol for runtime lookup.
     AIPURelay2NetworkCore builder(sid,network,mBlobNameToTensor, &mTmpAllocs);
     auto out = builder.VisitExpr(func->body);
-    //LOG(INFO)<<"AIPURelay2NetworkCore";
-    /*for (int i = 0; i < mDeploy->layer_size() && ok; i++)
-    {
-        const dc::LayerParameter& layerMsg = mDeploy->layer(i);
-        if (layerMsg.has_phase() && layerMsg.phase() == dc::TEST) {
-            continue;
-        }
-
-        if (layerMsg.type() == "Dropout")
-        {
-            mBlobNameToTensor->add(layerMsg.top().Get(0),
-                                   mBlobNameToTensor->find(layerMsg.bottom().Get(0).c_str()));
-            continue;
-        }
-
-        if (layerMsg.type() == "Input")
-        {
-            /*const dc::InputParameter& p = layerMsg.input_param();
-            for (int i = 0; i < layerMsg.top_size(); i++)
-            {
-                const dc::BlobShape& shape = p.shape().Get(i);
-                nvdla::Dims4 dims(shape.dim().Get(0), shape.dim().Get(1), shape.dim().Get(2), shape.dim().Get(3));
-                nvdla::ITensor* tensor = network->addInput(layerMsg.top(i).c_str(), dims);
-                mBlobNameToTensor->add(layerMsg.top().Get(i), tensor);
-                LOG(INFO)<<"mDeploy->input().Get(0).c_str()"<<layerMsg.top(i).c_str();
-                LOG(INFO)<<"mDeploy->input().Get(0)"<<layerMsg.top().Get(i);
-            }*/
-            /*continue;
-        }
-        if (layerMsg.type() == "Flatten")
-        {
-            nvdla::ITensor* tensor = (*mBlobNameToTensor)[layerMsg.bottom().Get(0)];
-            (*mBlobNameToTensor)[layerMsg.top().Get(0)] = tensor;
-            std::cout << "Warning: Flatten layer ignored." << std::endl;
-            continue;
-        }
-
-        LayerParseFnMap::iterator v = gParseTable.find(layerMsg.type());
-
-        if (v == gParseTable.end())
-        {
-            gLogError << "could not parse layer type " << layerMsg.type() << std::endl;
-            ok = false;
-        }
-        else
-        {
-            ILayer* layer = (*v->second)(network, layerMsg, weights, mBlobNameToTensor);
-
-            if (layer == 0)
-            {
-                gLogError << "error: parsing layer type " << layerMsg.type() <<
-                    " index " << i << std::endl;
-                ok = false;
-            }
-            else
-            {
-                layer->setName(layerMsg.name().c_str());
-                mBlobNameToTensor->add(layerMsg.top(0), layer->getOutput(0));
-            }
-        }
-    } */
     mBlobNameToTensor->setTensorNames();
     std::cout<<"mtmp data:"<<mTmpAllocs.size()<<std::endl;
-    
-    // LOG(INFO)<<"mtmp data:"<<*(float*)mTmpAllocs[0]<<std::endl;
-    // LOG(INFO)<<"mtmp data:"<<*(float*)mTmpAllocs[1]<<std::endl;
-    // LOG(INFO)<<"mtmp data:"<<*(float*)mTmpAllocs[2]<<std::endl;
-    /*std::cout<<"mtmp data:"<<*(float*)mTmpAllocs[3]<<std::endl;
-    std::cout<<"mtmp data:"<<*(float*)mTmpAllocs[4]<<std::endl;
-    std::cout<<"mtmp data:"<<*(float*)mTmpAllocs[5]<<std::endl;
-    std::cout<<"mtmp data:"<<*(float*)mTmpAllocs[6]<<std::endl;
-    std::cout<<"mtmp data:"<<*(float*)mTmpAllocs[7]<<std::endl;*/
     
     return ok? mBlobNameToTensor : 0;
 }

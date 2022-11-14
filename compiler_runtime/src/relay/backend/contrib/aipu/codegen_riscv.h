@@ -262,6 +262,10 @@ class CodegenAIPU : public ExprVisitor {
       op_type = operator_enum::SQUEEZE;
     } else if (call->op == tvm::relay::Op::Get("featuretoweight")) {
       op_type = operator_enum::FEATURETOWEIGHT;
+    } else if (call->op == tvm::relay::Op::Get("AIPU_GELU")) {
+      op_type = operator_enum::GELU;
+    } else if (call->op == tvm::relay::Op::Get("AIPU_NORM")) {
+      op_type = operator_enum::NORM;
     } else {
       LOG_INFO << "operators not listed " << call->op;
     }
@@ -940,6 +944,51 @@ class CodegenAIPU : public ExprVisitor {
     return cpu_param;
   }
 
+  Cpu_param* norm_op(const CallNode* call) {
+    Cpu_param* cpu_param = new Cpu_param();
+    Common_parameters common;
+    common_parameters_get(call, common);
+    cpu_param->cpu_operation.reduce_op.common = common;
+
+    // op_buffer_desc
+    Op_buffer_desc src_data;
+    Op_buffer_desc dst_data;
+    Expr src_expr = GetNotQuantizedExpr(call->args[0]);
+    Expr dst_expr = GetRef<Expr>(call);
+    std::vector<Type> src_tensor_check_type;
+    src_tensor_check_type = shape_type_get(src_expr);
+    src_data = op_buffer_desc_get(src_expr, src_tensor_check_type[0], src_data, 0);
+    std::vector<Type> dst_tensor_check_type;
+    dst_tensor_check_type = shape_type_get(dst_expr);
+    dst_data = op_buffer_desc_get(dst_expr, dst_tensor_check_type[0], dst_data, 2);
+
+    const auto* Attrs = call->attrs.as<LayerNormAttrs>();
+    const int ndim = src_tensor_check_type[0].as<TensorTypeNode>()->shape.size();
+    for (int n = 0; n < 4 ; n++){
+      cpu_param->cpu_operation.reduce_op.axis[n] = -1;
+    }
+    int64_t axis = Attrs->axis;
+    axis = axis < 0 ? axis + ndim : axis;
+    axis = axis + 4 - ndim;
+    if (axis <4 && axis>-1){
+      cpu_param->cpu_operation.reduce_op.axis[axis] = axis;
+    } else {
+      LOG(FATAL)<< "axis value is error !" << axis;
+    }
+    
+    cpu_param->cpu_operation.reduce_op.exclude = 0;
+    cpu_param->cpu_operation.reduce_op.keepdims = 0;
+    
+    cpu_param->cpu_operation_buffer.reduce_buffers.src_data = src_data;
+    cpu_param->cpu_operation_buffer.reduce_buffers.dst_data = dst_data;
+
+    if (debug_info)
+      output_info(cpu_param->cpu_operation.reduce_op.common,
+                  cpu_param->cpu_operation_buffer.reduce_buffers.src_data,
+                  cpu_param->cpu_operation_buffer.reduce_buffers.dst_data);
+    return cpu_param;
+  }
+
   Cpu_param* cast_op(const CallNode* call) {
     Cpu_param* cpu_param = new Cpu_param();
     Common_parameters common;
@@ -1468,6 +1517,7 @@ class CodegenAIPU : public ExprVisitor {
       {"nn.relu", &CodegenAIPU::common_only_op},
       {"nn.leaky_relu", &CodegenAIPU::common_only_op},
       {"featuretoweight", &CodegenAIPU::common_only_op},
+      {"AIPU_GELU", &CodegenAIPU::common_only_op},
 
       {"add", &CodegenAIPU::with_weight_op},
       {"less", &CodegenAIPU::with_weight_op},
@@ -1499,6 +1549,9 @@ class CodegenAIPU : public ExprVisitor {
       {"nn.max_pool2d", &CodegenAIPU::pool2d_op},
       {"nn.avg_pool2d", &CodegenAIPU::pool2d_op},
       {"nn.pad", &CodegenAIPU::pad_op},
+
+      {"mean", &CodegenAIPU::reduce_op},
+      {"AIPU_NORM", &CodegenAIPU::norm_op},
   };
 
   // void VisitExpr_(const VarNode* node) final {}
@@ -1752,7 +1805,7 @@ class CodegenAIPU : public ExprVisitor {
   float* iscale_ = new float[10]();
   float oscale_ = -1.0f;
   std::map<Expr, std::vector<float>> subfunc_in_scale_map_;
-  bool debug_info = true;
+  bool debug_info = false;
 };
 
 std::vector<Cpu_param*> CompileFunc4Riscv(const Function& func, Riscv_addr_list& riscv_addr_list,

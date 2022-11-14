@@ -44,7 +44,7 @@ class FeatureToWeightTransform_rewritter : public ExprRewriter {
 
   Expr Rewrite_(const CallNode* pre, const Expr& post) final {
     if (pre->op == dense_op_) {
-      std::cout << "This is an nn.dense CallNode" << std::endl;
+      // std::cout << "This is an nn.dense CallNode" << std::endl;
       auto tensor_a = post.as<CallNode>()->args[0];
       auto tensor_b = post.as<CallNode>()->args[1];
       if(!( (pre->checked_type_).defined() && (pre->args[0]->checked_type_).defined() && (pre->args[1]->checked_type_).defined() )){
@@ -53,27 +53,27 @@ class FeatureToWeightTransform_rewritter : public ExprRewriter {
       }
 
       if(pre->args[1].as<ConstantNode>()) {
-        std::cout << "This is a classical dense, do nothing" << std::endl;
+        // std::cout << "This is a classical dense, do nothing" << std::endl;
         return post;
       }
 
       auto checked_type = pre->checked_type();
       const auto* tensor_type = checked_type.as<TensorTypeNode>();
-      std::cout << "Type information: " << checked_type->GetTypeKey() << " " << tensor_type->shape << " " << tensor_type->dtype << std::endl;
+      // std::cout << "Type information: " << checked_type->GetTypeKey() << " " << tensor_type->shape << " " << tensor_type->dtype << std::endl;
 
       auto checked_type_a = pre->args[0]->checked_type();
       const auto* tensor_type_a = checked_type_a.as<TensorTypeNode>();
       if(!tensor_type_a){
         return post;
       }
-      std::cout << "Type information of data: " << checked_type_a->GetTypeKey() << " " << tensor_type_a->shape << " " << tensor_type_a->dtype << std::endl;
+      // std::cout << "Type information of data: " << checked_type_a->GetTypeKey() << " " << tensor_type_a->shape << " " << tensor_type_a->dtype << std::endl;
 
       auto checked_type_b = pre->args[1]->checked_type();
       const auto* tensor_type_b = checked_type_b.as<TensorTypeNode>();
       if(!tensor_type_b){
         return post;
       }
-      std::cout << "Type information of weight (as feature): " << checked_type_b->GetTypeKey() << " " << tensor_type_b->shape << " " << tensor_type_b->dtype << std::endl;
+      // std::cout << "Type information of weight (as feature): " << checked_type_b->GetTypeKey() << " " << tensor_type_b->shape << " " << tensor_type_b->dtype << std::endl;
 
       int dim_n = (tensor_type_b->shape[0]).as<IntImmNode>()->value;
       int dim_c = (tensor_type_b->shape[1]).as<IntImmNode>()->value;

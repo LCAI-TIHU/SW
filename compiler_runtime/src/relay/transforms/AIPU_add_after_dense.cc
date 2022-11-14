@@ -53,7 +53,7 @@ class AddAfterDense_rewritter : public ExprRewriter {
 
       auto checked_type = pre->checked_type();
       const auto* tensor_type = checked_type.as<TensorTypeNode>();
-      std::cout << "Type information: " << checked_type->GetTypeKey() << " " << tensor_type->shape << " " << tensor_type->dtype << std::endl;
+      // std::cout << "Type information: " << checked_type->GetTypeKey() << " " << tensor_type->shape << " " << tensor_type->dtype << std::endl;
 
       int dim_n = (tensor_type->shape[0]).as<IntImmNode>()->value;
       int dim_c = (tensor_type->shape[1]).as<IntImmNode>()->value;
