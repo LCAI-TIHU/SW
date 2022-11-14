@@ -16,7 +16,7 @@ SOC parameters:
 <img src="../doc/AIPU_structure.png" width="600" height="300" alt="TIHU"/><br/>
 </div>
 
-# The workflow of TIHU  
+# The workflow of TIHU firmware  
 * Initialize CPU clock, serial, timer and interrupt.    
 * Wait for computing tasks submitted by RUNTIME.  
 * RUNTIME submits task-list and address-list to TIHU, and raise PCIe interrupt to CPU.  
@@ -51,12 +51,13 @@ cd xxx/SW/firmware && make clean && make -j
 ```
 
 Download firmware.bin to DDR or SRAM.  
-**Download address should be same with the address in link file.**  
+**_Download address should be same with the address in link file._**  
+**_Must in root mode._**  
 
 ` cd xxx/SW/xdma/tests && source download_firmware.sh `  
 
 ## In docker
-First delet "sudo su" in download_firmware.sh, then:  
+
 ```
 cd xxx/SW/firmware && make clean && make -j  
 cd xxx/SW/xdma/tests && source download_firmware.sh  
