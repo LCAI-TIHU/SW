@@ -1,8 +1,5 @@
 #! /bin/sh
 
-sudo su <<EOF
-pwd
-
 echo "Insmod xdma.ko."
 insmod ../xdma/xdma.ko
 
@@ -17,5 +14,3 @@ cp ../../firmware/src/debug/firmware.bin ./
 ##download to ddr
 python3 download_firmware.py -i firmware.bin -a 0x80000000 -e  0x80000000
 echo "python3 download_firmware.py -i firmware.bin -a 0x80000000 -e  0x80000000"
-
-EOF
