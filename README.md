@@ -13,14 +13,14 @@ Currently, TIHU only supports TensorFlow. Pytorch will be supported very soon. A
 </div>
    
 CNN models and accuracy:   
-| num | category | CNN model | TIHU(int8) accuracy | llvm(float) accuracy|
-|---|----------------|-------|--------|------|
-| 1 | classification | LeNet | 0.9884 | 0.992|
-| 2 | classification | ResNet50 | 0.755 | 0.757|
-| 3 | classification | MobileNetv2 | 0.71 | 0.72|
-| 4 | classification | VGG16 | 0.627 | 0.629 |
-| 5 | detection | YOLOv3 | 0.548 | 0.562|
-| 6 | NLP | bert-base | - | - |
+| num | category | CNN model | TIHU(int8) accuracy | llvm(float) accuracy | data set |
+|---|----------------|-------|--------|------| -------- |
+| 1 | classification | LeNet | 0.9884 | 0.992| mnist |
+| 2 | classification | ResNet50 | 0.755 | 0.757| imagenet |
+| 3 | classification | MobileNetv2 | 0.71 | 0.72| imagenet |
+| 4 | classification | VGG16 | 0.627 | 0.629 | imagenet |
+| 5 | detection | YOLOv3 | 0.548 | 0.562| coco |
+| 6 | NLP | bert-base | - | - | squad_v1.1 |
 
 At present, the following operators are supported. Intrinsic operators will be done.
 
