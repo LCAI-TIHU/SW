@@ -27,6 +27,7 @@ apt-get upgrade -y && \
 apt-get install -y \
 bzip2 \
 rsync \
+kmod  \
 wget
 
 # Install RISC-V Toolchain
