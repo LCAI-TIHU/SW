@@ -214,7 +214,7 @@ if __name__ == '__main__':
         lib = relay.build(mod_quantized, target, params=params)
     aipu_output = run_test(lib, origin_shape)
     ## test the entire data set
-    run_inference(lib)
+    # run_inference(lib)
    
     # Finish
     print("Lenet inferrence done !!!")
