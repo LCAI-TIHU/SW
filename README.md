@@ -125,6 +125,7 @@ $ cd /workspace/SW/compiler_runtime/demo
 $ python3 from_tensorflow_quantize_lenet.py 2>&1 | tee lenet.log
 
 ```   
+The number in the picture is 7, and you get the inference that the 8th data is the largest.
 
 # TODO
 
