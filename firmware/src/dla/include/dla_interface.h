@@ -175,7 +175,7 @@ struct dla_roi_desc {
 struct dla_bdma_transfer_desc {
 	int16_t source_address;
 	int16_t destination_address;
-	/* add by jiazhaorong */
+	/* add by debug */
 	uint32_t src_offset;
 	uint32_t dst_offset;
 	/***********************/

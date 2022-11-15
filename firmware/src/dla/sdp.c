@@ -310,7 +310,7 @@ processor_sdp_program(struct dla_processor_group *group)
 					(void *)&dst_addr,
 					DESTINATION_DMA);
 		CHECK_ALIGN(dst_addr, atom_size);
-//		debug_info("jia: SDP OUTPUT address is 0x%08x\n", dst_addr);
+//		debug_info("debug: SDP OUTPUT address is 0x%08x\n", dst_addr);
 	}
 
 	if (sdp_op->lut_index >= 0) {

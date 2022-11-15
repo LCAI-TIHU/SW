@@ -205,14 +205,14 @@ utils_get_free_group(struct dla_processor *processor,
 	hw_rdma_ptr = 0;
 
 	if (processor->op_type == DLA_OP_BDMA) {
-		debug_trace("jia: get BDMA free group\n ");
+		debug_trace("debug: get BDMA free group\n ");
 		pointer = reg_read(map_ptr_addr[processor->op_type]);
 		hw_consumer_ptr = ((pointer & MASK(BDMA_STATUS_0, GRP0_BUSY)) >>
 				SHIFT(BDMA_STATUS_0, GRP0_BUSY)) ==
 				FIELD_ENUM(BDMA_STATUS_0, GRP0_BUSY, YES) ?
 				1 : 0;
 	} else {
-		debug_trace("jia: get not BDMA but processors %d free group\n",processor->op_type);
+		debug_trace("debug: get not BDMA but processors %d free group\n",processor->op_type);
 		pointer = reg_read(map_ptr_addr[processor->op_type]);
 		hw_consumer_ptr = (pointer & MASK(CDP_S_POINTER_0, CONSUMER)) >>
 				SHIFT(CDP_S_POINTER_0, CONSUMER);

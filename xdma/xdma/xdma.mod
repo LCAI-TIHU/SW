@@ -1,2 +1,0 @@
-/home/jiazr/linux-kernel/linux-kernel/xdma/libxdma.o /home/jiazr/linux-kernel/linux-kernel/xdma/xdma_cdev.o /home/jiazr/linux-kernel/linux-kernel/xdma/cdev_ctrl.o /home/jiazr/linux-kernel/linux-kernel/xdma/cdev_events.o /home/jiazr/linux-kernel/linux-kernel/xdma/cdev_sgdma.o /home/jiazr/linux-kernel/linux-kernel/xdma/cdev_xvc.o /home/jiazr/linux-kernel/linux-kernel/xdma/cdev_bypass.o /home/jiazr/linux-kernel/linux-kernel/xdma/xdma_mod.o /home/jiazr/linux-kernel/linux-kernel/xdma/xdma_thread.o
-

@@ -75,7 +75,7 @@ dla_get_op_desc(struct dla_task *task, int16_t index,
 		debug_trace("no desc get due to index==-1 op_type == %d\n",op_type);
 		goto exit;
 	}else{
-		debug_trace("jia: get op_desc for index == %d op_type == %d\n",index,op_type);
+		debug_trace("debug: get op_desc for index == %d op_type == %d\n",index,op_type);
 	}
 
 	dep_graph_addr = (sizeof(struct dla_common_op_desc) *
@@ -91,7 +91,7 @@ dla_get_op_desc(struct dla_task *task, int16_t index,
 						desc->op_type);
 				continue;
 			}
-			debug_trace("jia: desc->index == %d for op_type==%d processor has been got in initiate_processors()\n",desc->index,op_type);
+			debug_trace("debug: desc->index == %d for op_type==%d processor has been got in initiate_processors()\n",desc->index,op_type);
 			desc_refcount[op_type][i]++;
 			goto exit;
 		}
@@ -141,7 +141,7 @@ dla_get_op_desc(struct dla_task *task, int16_t index,
 			 * from DRAM
 			 */
 			assert(desc_refcount[op_type][i] == 0);
-			debug_trace("jia: %d desc in %d desc_cache gets op_desc,\
+			debug_trace("debug: %d desc in %d desc_cache gets op_desc,\
 					dependency_graph_address == %#x, op_base == %d\n",i,DLA_OP_CACHE_SIZE,task->dependency_graph_addr,op_base);
 			debug_trace(" desc->consumers = %#x, desc->dependency_count = %d, desc->fused_parent = %#x, desc->index = %d,desc->op_type = %d\n",\
 					desc->consumers, desc->dependency_count, desc->fused_parent, desc->index,desc->op_type);
@@ -150,7 +150,7 @@ dla_get_op_desc(struct dla_task *task, int16_t index,
 			desc_refcount[op_type][i]++;
 			goto exit;
 		}
-		debug_trace("jia: %d desc in %d desc_cache does NOT get op_desc\n",i,DLA_OP_CACHE_SIZE);
+		debug_trace("debug: %d desc in %d desc_cache does NOT get op_desc\n",i,DLA_OP_CACHE_SIZE);
 	}
 
 exit:
