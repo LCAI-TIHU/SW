@@ -288,7 +288,7 @@ dla_program_operation(struct dla_processor *processor,
 	/**
 	 * Pre-fetch consumers
 	 */
-	debug_trace("jia: Pre-fetch consumers after programmed group");
+	debug_trace("debug: Pre-fetch consumers after programmed group");
 	#pragma clang loop vectorize(enable)
 	for (i = 0; i < DLA_OP_NUM; i++) {
 		group->consumers[i] = dla_get_op_desc(engine->task,
@@ -505,12 +505,12 @@ dla_update_dependency(struct dla_consumer *consumer,
 	struct dla_engine *engine = dla_get_engine();
 
 	if (consumer->index == -1){
-		debug_trace("jia: dla_update_dependency faild as consumer->index==-1\n");
+		debug_trace("debug: dla_update_dependency faild as consumer->index==-1\n");
 		goto exit;}
 
 	/* Update dependency only if event matches */
 	if (event != consumer->event){
-		debug_trace("jia: dla_update_dependency faild as consumer->event != event parameter\n");
+		debug_trace("debug: dla_update_dependency faild as consumer->event != event parameter\n");
 		goto exit;}
 
 	/**
@@ -672,7 +672,7 @@ dla_op_completion(struct dla_processor *processor,
 	 * update dependency graph for this task
 	 * TODO: Add proper error handling
 	 */
-	debug_trace("jia: update processor %d index%d group%d consumers after interupt\n",op_desc->op_type, op_desc->index, group);
+	debug_trace("debug: update processor %d index%d group%d consumers after interupt\n",op_desc->op_type, op_desc->index, group);
 	ret = dla_update_consumers(group, op_desc, DLA_EVENT_OP_COMPLETED);
 	if (ret)
 		goto exit;
@@ -714,7 +714,7 @@ dla_op_completion(struct dla_processor *processor,
 
 dequeue_op:
 	/* dequeue operation from this processor */
-	debug_trace("jia: Next Group is not ready for programming after the interupt, call dla_dequeue_operation");
+	debug_trace("debug: Next Group is not ready for programming after the interupt, call dla_dequeue_operation");
 	ret = dla_dequeue_operation(engine, processor);
 
 exit:
@@ -743,7 +743,7 @@ dla_read_network_config(struct dla_engine *engine)
 	struct dla_task *task = engine->task;
 
 	debug_trace("Enter:%s\n", __func__);
-	debug_trace("jia %s\n",OPENDLA_H);
+	debug_trace("debug %s\n",OPENDLA_H);
 
 	/**
 	 * Read address list from DRAM to DMEM
@@ -944,7 +944,7 @@ dla_initiate_processors(struct dla_engine *engine)
 	}
 //	#pragma clang loop vectorize(enable)
 	for (i = 0; i < DLA_OP_NUM; i++) {
-		debug_trace("##############jia: dla_initiate_processor%d: ###############\n",i);
+		debug_trace("##############debug: dla_initiate_processor%d: ###############\n",i);
 		index = nw->op_head[i];
 
 		/* If there is no op for this type then continue */
@@ -1006,7 +1006,7 @@ dla_handle_events(struct dla_processor *processor)
 			debug_trace("************************Handle cdma weight done event, processor %s"
 				"group %u******************************\n", processor->name, group->id);
 
-			group->events = group->events & (~(1 << DLA_EVENT_CDMA_WT_DONE));//modified by jiazhaorong
+			group->events = group->events & (~(1 << DLA_EVENT_CDMA_WT_DONE));//modified by debug
 			ret = dla_update_consumers(group,
 						   group->op_desc,
 						   DLA_EVENT_CDMA_WT_DONE);
@@ -1018,7 +1018,7 @@ dla_handle_events(struct dla_processor *processor)
 			debug_trace("*********************************Handle cdma data done event, processor %s "
 				"group %u****************\n", processor->name, group->id);
 
-			group->events = group->events & (~(1 << DLA_EVENT_CDMA_DT_DONE));//modified by jiazhaorong
+			group->events = group->events & (~(1 << DLA_EVENT_CDMA_DT_DONE));//modified by debug
 			ret = dla_update_consumers(group,
 						   group->op_desc,
 						   DLA_EVENT_CDMA_DT_DONE);
@@ -1033,7 +1033,7 @@ dla_handle_events(struct dla_processor *processor)
 			debug_trace("******************************Handle op complete event, processor %s "
 				"group %u************************\n", processor->name, group->id);
 
-			group->events = group->events & (~(1 << DLA_EVENT_OP_COMPLETED));//modified by jiazhaorong
+			group->events = group->events & (~(1 << DLA_EVENT_OP_COMPLETED));//modified by debug
 			ret = dla_op_completion(processor, group);
 			if (ret)
 				goto exit;
@@ -1043,7 +1043,7 @@ dla_handle_events(struct dla_processor *processor)
 		 * Clear all events
 		 */
 		debug_trace("@@@@@@@@@@@@@  Clear all events after this @@@@@@@@@@@@@@@@@@\n");
-//		group->events = 0;//modified by jiazhaorong
+//		group->events = 0;//modified by debug
 		group_id = !group_id;
 	}
 exit:
@@ -1094,7 +1094,7 @@ dla_execute_task(void *engine_context, void *task_data, void *config_data)
 	int32_t ret;
 	struct dla_engine *engine = (struct dla_engine *)engine_context;
 
-	debug_trace("jia: Enter %s\n",__func__);
+	debug_trace("debug: Enter %s\n",__func__);
 	if (engine == NULL) {
 		debug_trace("engine is NULL\n");
 		ret = ERR(INVALID_INPUT);

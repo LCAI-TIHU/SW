@@ -2,7 +2,7 @@
  * aipu_timer.c
  *
  *  Created on: Nov 30, 2021
- *      Author: jiazhaorong
+ *      Author: debug
  */
 
 #include "aipu_timer_reg.h"

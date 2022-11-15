@@ -49,97 +49,97 @@ int32_t dla_isr_handler(void *engine_data)
 		processor = &engine->processors[DLA_OP_CONV];
 		group = &processor->groups[0];
 		group->events |= (1 << DLA_EVENT_OP_COMPLETED);
-        debug_trace("===============cacc_done_0, group->events:%d==========\n\n",group->events);//add by jiazhaorong
+        debug_trace("===============cacc_done_0, group->events:%d==========\n\n",group->events);//add by debug
 	}
 	if (reg & MASK(GLB_S_INTR_STATUS_0, CACC_DONE_STATUS1)) {
 		processor = &engine->processors[DLA_OP_CONV];
 		group = &processor->groups[1];
 		group->events |= (1 << DLA_EVENT_OP_COMPLETED);
-        debug_trace("===============cacc_done_1,group->events:%d==========\n\n",group->events);//add by jiazhaorong
+        debug_trace("===============cacc_done_1,group->events:%d==========\n\n",group->events);//add by debug
 	}
 	if (reg & MASK(GLB_S_INTR_STATUS_0, SDP_DONE_STATUS0)) {
 		processor = &engine->processors[DLA_OP_SDP];
 		group = &processor->groups[0];
 		group->events |= (1 << DLA_EVENT_OP_COMPLETED);
-        debug_trace("===============sdp_done_0,group->events:%d==========\n\n",group->events);//add by jiazhaorong
+        debug_trace("===============sdp_done_0,group->events:%d==========\n\n",group->events);//add by debug
 	}
 	if (reg & MASK(GLB_S_INTR_STATUS_0, SDP_DONE_STATUS1)) {
 		processor = &engine->processors[DLA_OP_SDP];
 		group = &processor->groups[1];
 		group->events |= (1 << DLA_EVENT_OP_COMPLETED);
-        debug_trace("===============sdp_done_1,group->events:%d==========\n\n",group->events);//add by jiazhaorong
+        debug_trace("===============sdp_done_1,group->events:%d==========\n\n",group->events);//add by debug
 	}
 	if (reg & MASK(GLB_S_INTR_STATUS_0, CDP_DONE_STATUS0)) {
 		processor = &engine->processors[DLA_OP_CDP];
 		group = &processor->groups[0];
 		group->events |= (1 << DLA_EVENT_OP_COMPLETED);
-        debug_trace("===============cdp_done_0,group->events:%d==========\n\n",group->events);//add by jiazhaorong
+        debug_trace("===============cdp_done_0,group->events:%d==========\n\n",group->events);//add by debug
 	}
 	if (reg & MASK(GLB_S_INTR_STATUS_0, CDP_DONE_STATUS1)) {
 		processor = &engine->processors[DLA_OP_CDP];
 		group = &processor->groups[1];
 		group->events |= (1 << DLA_EVENT_OP_COMPLETED);
-        debug_trace("===============cdp_done_1,group->events:%d==========\n\n",group->events);//add by jiazhaorong
+        debug_trace("===============cdp_done_1,group->events:%d==========\n\n",group->events);//add by debug
 	}
 	if (reg & MASK(GLB_S_INTR_STATUS_0, RUBIK_DONE_STATUS0)) {
 		processor = &engine->processors[DLA_OP_RUBIK];
 		group = &processor->groups[0];
 		group->events |= (1 << DLA_EVENT_OP_COMPLETED);
-        debug_trace("===============rubic_done_0,group->events:%d==========\n\n",group->events);//add by jiazhaorong
+        debug_trace("===============rubic_done_0,group->events:%d==========\n\n",group->events);//add by debug
 	}
 	if (reg & MASK(GLB_S_INTR_STATUS_0, RUBIK_DONE_STATUS1)) {
 		processor = &engine->processors[DLA_OP_RUBIK];
 		group = &processor->groups[1];
 		group->events |= (1 << DLA_EVENT_OP_COMPLETED);
-       debug_trace("===============rubic_done_1,group->events:%d==========\n\n",group->events);//add by jiazhaorong
+       debug_trace("===============rubic_done_1,group->events:%d==========\n\n",group->events);//add by debug
 	}
 	if (reg & MASK(GLB_S_INTR_STATUS_0, PDP_DONE_STATUS0)) {
 		processor = &engine->processors[DLA_OP_PDP];
 		group = &processor->groups[0];
 		group->events |= (1 << DLA_EVENT_OP_COMPLETED);
-       debug_trace("===============pdp_done_0,group->events:%d==========\n\n",group->events);//add by jiazhaorong
+       debug_trace("===============pdp_done_0,group->events:%d==========\n\n",group->events);//add by debug
 	}
 	if (reg & MASK(GLB_S_INTR_STATUS_0, PDP_DONE_STATUS1)) {
 		processor = &engine->processors[DLA_OP_PDP];
 		group = &processor->groups[1];
 		group->events |= (1 << DLA_EVENT_OP_COMPLETED);
-       debug_trace("===============pdp_done_1,group->events:%d==========\n\n",group->events);//add by jiazhaorong
+       debug_trace("===============pdp_done_1,group->events:%d==========\n\n",group->events);//add by debug
 	}
 	if (reg & MASK(GLB_S_INTR_STATUS_0, BDMA_DONE_STATUS0)) {
 		processor = &engine->processors[DLA_OP_BDMA];
 		group = &processor->groups[0];
 		group->events |= (1 << DLA_EVENT_OP_COMPLETED);
-       debug_trace("===============bdma_done_0,group->events:%d==========\n\n",group->events);//add by jiazhaorong
+       debug_trace("===============bdma_done_0,group->events:%d==========\n\n",group->events);//add by debug
 	}
 	if (reg & MASK(GLB_S_INTR_STATUS_0, BDMA_DONE_STATUS1)) {
 		processor = &engine->processors[DLA_OP_BDMA];
 		group = &processor->groups[1];
 		group->events |= (1 << DLA_EVENT_OP_COMPLETED);
-       debug_trace("===============bdma_done_1,group->events:%d==========\n\n",group->events);//add by jiazhaorong
+       debug_trace("===============bdma_done_1,group->events:%d==========\n\n",group->events);//add by debug
 	}
 	if (reg & MASK(GLB_S_INTR_STATUS_0, CDMA_DAT_DONE_STATUS0)) {
 		processor = &engine->processors[DLA_OP_CONV];
 		group = &processor->groups[0];
 		group->events |= (1 << DLA_EVENT_CDMA_DT_DONE);
-       debug_trace("===============cdma_dat_done_0,group->events:%d==========\n\n",group->events);//add by jiazhaorong
+       debug_trace("===============cdma_dat_done_0,group->events:%d==========\n\n",group->events);//add by debug
 	}
 	if (reg & MASK(GLB_S_INTR_STATUS_0, CDMA_DAT_DONE_STATUS1)) {
 		processor = &engine->processors[DLA_OP_CONV];
 		group = &processor->groups[1];
 		group->events |= (1 << DLA_EVENT_CDMA_DT_DONE);
-       debug_trace("===============cdma_dat_done_1,group->events:%d==========\n\n",group->events);//add by jiazhaorong
+       debug_trace("===============cdma_dat_done_1,group->events:%d==========\n\n",group->events);//add by debug
 	}
 	if (reg & MASK(GLB_S_INTR_STATUS_0, CDMA_WT_DONE_STATUS0)) {
 		processor = &engine->processors[DLA_OP_CONV];
 		group = &processor->groups[0];
 		group->events |= (1 << DLA_EVENT_CDMA_WT_DONE);
-       debug_trace("===============cdma_wt_done_0,group->events:%d==========\n\n",group->events);//add by jiazhaorong
+       debug_trace("===============cdma_wt_done_0,group->events:%d==========\n\n",group->events);//add by debug
 	}
 	if (reg & MASK(GLB_S_INTR_STATUS_0, CDMA_WT_DONE_STATUS1)) {
 		processor = &engine->processors[DLA_OP_CONV];
 		group = &processor->groups[1];
 		group->events |= (1 << DLA_EVENT_CDMA_WT_DONE);
-       debug_trace("===============cdma_wt_done_1,group->events:%d==========\n\n",group->events);//add by jiazhaorong
+       debug_trace("===============cdma_wt_done_1,group->events:%d==========\n\n",group->events);//add by debug
 	}
 
 	glb_reg_write(S_INTR_STATUS, reg);
