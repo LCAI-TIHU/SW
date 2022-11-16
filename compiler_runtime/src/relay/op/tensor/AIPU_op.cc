@@ -17,10 +17,16 @@
  * under the License.
  */
 
-/*!
- * \file transform.cc
- * \brief Transform operators.
+/*
+ * Inspur.
+ * This is a new or modified file.
  */
+
+/*!
+ * \file AIPU_op.cc
+ * \brief Operators for AIPU.
+ */
+
 #include "transform.h"
 
 #include <tvm/ir/error.h>
@@ -39,6 +45,7 @@
 #include <tvm/topi/transform.h>
 
 #include <vector>
+#include <numeric>
 
 #include "../../transforms/infer_layout_utils.h"
 #include "../../transforms/pass_utils.h"
@@ -51,6 +58,7 @@ namespace tvm {
 namespace relay {
 using tir::IntImmNode;
 
+// featuretoweight
 bool FeaturetoweightRel(const Array<Type>& types, int num_inputs, const Attrs& attrs, const TypeReporter& reporter) {
   // types: [data, result]
   ICHECK_EQ(types.size(), 2);
@@ -116,7 +124,7 @@ Expr MakeFeaturetoweight(Expr data, Array<Integer> newshape) {
 TVM_REGISTER_GLOBAL("relay.op._make.featuretoweight").set_body_typed(MakeFeaturetoweight);
 
 RELAY_REGISTER_OP("featuretoweight")
-    .describe(R"code(convert an NVDLA feature data (N{C/32}HW{32}) to an NVDLA weight data (N{C/64}HW{64}).
+    .describe(R"code(convert an NVDLA feature data (N{C/32}HW{32}) to an NVDLA weight data ({N/32}{C/64}HW{32}{64}).
 )code" TVM_ADD_FILELINE)
     .set_num_inputs(1)
     .set_attrs_type<ReshapeAttrs>()
@@ -124,6 +132,99 @@ RELAY_REGISTER_OP("featuretoweight")
     .set_support_level(3)
     .add_type_rel("Featuretoweight", FeaturetoweightRel)
     .set_attr<FTVMCompute>("FTVMCompute", featuretoweightCompute)
+    .set_attr<TOpPattern>("TOpPattern", kInjective);
+
+    
+// GELU
+bool AIPU_GELURel(const Array<Type>& types, int num_inputs, const Attrs& attrs, const TypeReporter& reporter) {
+  // types: [data, result]
+  ICHECK_EQ(types.size(), 2);
+  const auto* data = types[0].as<TensorTypeNode>();
+  if (data == nullptr) {
+    ICHECK(types[0].as<IncompleteTypeNode>()) << "reshape: expect input type to be TensorType but get " << types[0];
+    return false;
+  }
+
+  // This function is in transform.cc
+  const auto& oshape = InferNewShape(data->shape, attrs, false);
+
+  Array<IndexExpr> data_shape;
+  data_shape = data->shape;
+
+  ICHECK_EQ(oshape.size(), data_shape.size()) << "Input tensor shape and reshaped shape are not compatible";
+
+  int64_t oshape_ele = 1;
+  int64_t data_shape_ele = 1;
+  for(size_t i = 0; i < oshape.size(); ++ i) {
+    oshape_ele = Downcast<tvm::Integer>(oshape[i])->value;
+    data_shape_ele = Downcast<tvm::Integer>(data_shape[i])->value;
+    ICHECK_EQ(oshape_ele, data_shape_ele) << "Input tensor shape and reshaped shape are not compatible";
+  }
+
+  reporter->Assign(types[1], TensorType(oshape, data->dtype));
+  return true;
+}
+
+Array<te::Tensor> AIPU_GELUCompute(const Attrs& attrs, const Array<te::Tensor>& inputs, const Type& out_type) {
+  const auto* out_ttype = out_type.as<TensorTypeNode>();
+  ICHECK(out_ttype != nullptr);
+  Array<IndexExpr> newshape;
+  bool newshape_has_any = false;
+  for (auto val : out_ttype->shape) {
+    if (val->IsInstance<tir::AnyNode>() || val->IsInstance<tir::VarNode>()) {
+      newshape_has_any = true;
+      break;
+    } else {
+      newshape.push_back(val);
+    }
+  }
+
+  if (newshape_has_any) {
+    newshape = InferNewShape(inputs[0]->shape, attrs, false);
+  }
+  // TODO give a correct implementation
+  return {topi::reshape(inputs[0], newshape)};
+}
+
+RELAY_REGISTER_OP("AIPU_GELU")
+    .describe(R"code(GELU activation function, used in BERT model.)code" TVM_ADD_FILELINE)
+    .set_num_inputs(1)
+    .set_attrs_type<ReshapeAttrs>()
+    .add_argument("data", "Tensor", "The input tensor.")
+    .set_support_level(3)
+    .add_type_rel("AIPU_GELU", AIPU_GELURel)
+    .set_attr<FTVMCompute>("FTVMCompute", AIPU_GELUCompute)
+    .set_attr<TOpPattern>("TOpPattern", kInjective);
+
+
+
+bool AIPU_NORMRel(const Array<Type>& types, int num_inputs, const Attrs& attrs, const TypeReporter& reporter) {
+    const auto* data = types[0].as<TensorTypeNode>();
+    Array<IndexExpr> oshape = data->shape;
+    reporter->Assign(types[1], TensorType(oshape, data->dtype));
+    return true;
+}
+
+Array<te::Tensor> AIPU_NORMCompute(const Attrs& attrs, const Array<te::Tensor>& inputs, const Type& out_type) {
+  const auto* out_ttype = out_type.as<TensorTypeNode>();
+  ICHECK(out_ttype != nullptr);
+  Array<IndexExpr> newshape;
+  for (auto val : out_ttype->shape) {
+      newshape.push_back(val);
+  }
+
+  // TODO give a correct implementation
+  return {topi::reshape(inputs[0], newshape)};
+}
+
+RELAY_REGISTER_OP("AIPU_NORM")
+    .describe(R"code(normalization function)code" TVM_ADD_FILELINE)
+    .set_num_inputs(1)
+    .set_attrs_type<LayerNormAttrs>()
+    .add_argument("data", "Tensor", "The input tensor.")
+    .set_support_level(3)
+    .add_type_rel("AIPU_NORM", AIPU_NORMRel)
+    .set_attr<FTVMCompute>("FTVMCompute", AIPU_NORMCompute)
     .set_attr<TOpPattern>("TOpPattern", kInjective);
 
 }  // namespace relay

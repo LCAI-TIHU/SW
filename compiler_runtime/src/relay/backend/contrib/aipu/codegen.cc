@@ -1,9 +1,7 @@
-
 /*
  * Inspur.
  * This is a new or modified file.
  */
-
 #include "codegen_aipu.h"
 #include "codegen_riscv.h"
 #include <tvm/relay/analysis.h>
@@ -44,7 +42,9 @@
 #include "graph_aid_dtype.h" //yuanyue 20220713 aid dtype
 
 #define TARGET_CONFIG_NAME "nv_full"
-#define DEFAULT_QUANT_MODE nvdla::QuantizationMode::PER_FILTER  // PER_FILTER
+
+// quantization mode for NVDLA. NOTE. PER_KERNEL mode is not compatible with group conv
+#define DEFAULT_QUANT_MODE nvdla::QuantizationMode::PER_FILTER  // PER_FILTER  PER_KERNEL
 #define DEFAULT_BATCH_SIZE 0
 #define DEFAULT_DATA_FMT nvdla::DataFormat::NHWC
 // #define DEFAULT_DATA_FMT nvdla::DataFormat::NCHW
@@ -61,7 +61,6 @@ TVM_REGISTER_GLOBAL("AIPU_config_quantization_PER_FILTER")
   }
   *rv = true;
 });
-
 
 using tvm::relay::contrib::aipu::IBinaryProtoBlob;
 using tvm::relay::contrib::aipu::IBlobNameToTensor;
@@ -81,52 +80,11 @@ static CompilerTestAppArgs defaultCompilerTestAppArgs = {
     /* .profileFile = */ "",
     /* .configtarget = */ TARGET_CONFIG_NAME,
     /* .calibtable = */ "", 
-    /* .quantizationMode = */ theQuantizationMode,
+    /* .quantizationMode = */ DEFAULT_QUANT_MODE,
     /* .numBatches = */ DEFAULT_BATCH_SIZE,
     /* .inDataFormat = */ DEFAULT_DATA_FMT,
     /* .computePrecision = */ nvdla::DataType::INT8  // nvdla::DataType::INT8 HALF
 };
-
-NvDlaError testSetup(const CompilerTestAppArgs* appArgs, CompilerTestInfo* i) {
-  NvDlaError e = NvDlaSuccess;
-
-  std::string wisdomPath = appArgs->outputPath + "wisdom.dir/";
-  std::string removeCmd = "";
-  std::string imagePath = "";
-  NvDlaStatType stat;
-  int ii = 0;
-
-  // Do input paths exist?
-  e = NvDlaStat(appArgs->inputPath.c_str(), &stat);
-  if (e != NvDlaSuccess)
-    ORIGINATE_ERROR_FAIL(NvDlaError_BadParameter, "Input path does not exist: \"%s\"",
-                         appArgs->inputPath.c_str());
-
-  // Do output paths exist?
-  e = NvDlaStat(appArgs->outputPath.c_str(), &stat);
-  if (e != NvDlaSuccess)
-    ORIGINATE_ERROR_FAIL(NvDlaError_BadParameter, "Output path does not exist: \"%s\"",
-                         appArgs->outputPath.c_str());
-
-  // Clear wisdomPath if any exist
-  removeCmd += "rm -rf " + wisdomPath;
-  ii = std::system(removeCmd.c_str());  // This is pretty awful
-  if (ii != 0)
-    ORIGINATE_ERROR_FAIL(NvDlaError_BadParameter, "system command failed: \"%s\"",
-                         removeCmd.c_str());
-
-  PROPAGATE_ERROR_FAIL(NvDlaMkdir(const_cast<char*>(wisdomPath.c_str())));
-
-  // Initialize CompilerTestInfo
-  i->wisdom = NULL;
-  i->wisdomPath = wisdomPath;
-  i->pData = NULL;
-
-  return NvDlaSuccess;
-
-fail:
-  return e;
-}
 
 static NvDlaError beginWithNamedProfile(const CompilerTestAppArgs* appArgs, CompilerTestInfo* i) {
   NvDlaError e = NvDlaSuccess;
@@ -143,79 +101,6 @@ static NvDlaError beginWithNamedProfile(const CompilerTestAppArgs* appArgs, Comp
     ORIGINATE_ERROR_FAIL(NvDlaError_NotInitialized, "Profile %s not initialized",
                          appArgs->profileName.c_str());
   }
-
-fail:
-  return e;
-}
-
-static NvDlaError updateProfileWithCmdLineArgs(const CompilerTestAppArgs* appArgs,
-                                               CompilerTestInfo* i, const char* profileName,
-                                               nvdla::DataFormat inDataFormat) {
-  NvDlaError e = NvDlaSuccess;
-  nvdla::IProfiler* profiler;
-  nvdla::IProfile* profile;
-
-  profiler = i->wisdom->getProfiler();
-  if (!profiler) ORIGINATE_ERROR_FAIL(NvDlaError_BadParameter, "wisdom->getProfiler() failed");
-  profile = profiler->getProfile(profileName);
-  if (!profile) ORIGINATE_ERROR_FAIL(NvDlaError_BadParameter, "profiler->getProfile() failed");
-
-  PROPAGATE_ERROR_FAIL(profile->setComputePrecision(appArgs->computePrecision));
-  PROPAGATE_ERROR_FAIL(profile->setNetworkInputDataFormat(inDataFormat));
-
-  // determine input surface format
-  switch (inDataFormat) {
-    case nvdla::DataFormat::NHWC:
-
-      if (appArgs->computePrecision == nvdla::DataType::HALF) {
-        PROPAGATE_ERROR_FAIL(
-            profile->setNetworkInputSurfaceFormat(nvdla::PixelFormat::A16B16G16R16_F));
-      } else if (appArgs->computePrecision == nvdla::DataType::INT8) {
-        PROPAGATE_ERROR_FAIL(profile->setNetworkInputSurfaceFormat(
-            nvdla::PixelFormat::FEATURE));  // A8B8G8R8 R8 FEATURE
-      } else {
-        ORIGINATE_ERROR_FAIL(NvDlaError_NotSupported,
-                             "NHWC and compute precision %u is not yet supported",
-                             appArgs->computePrecision.v());
-      }
-      break;
-    case nvdla::DataFormat::NCxHWx:
-    case nvdla::DataFormat::NCHW:
-    case nvdla::DataFormat::UNKNOWN:  // atleast start the test with feature data format
-    default:
-      if (std::strcmp(appArgs->configtarget.c_str(), "opendla-small") == 0)
-        PROPAGATE_ERROR_FAIL(profile->setNetworkInputSurfaceFormat(nvdla::PixelFormat::FEATURE_X8));
-      else
-        PROPAGATE_ERROR_FAIL(profile->setNetworkInputSurfaceFormat(nvdla::PixelFormat::FEATURE));
-  }
-
-  // determine int8 cfgs
-  if (appArgs->computePrecision == nvdla::DataType::INT8) {
-    PROPAGATE_ERROR_FAIL(profile->setTensorScalingMode(nvdla::TensorScalingMode::PER_TENSOR));
-    switch (appArgs->quantizationMode) {
-      case nvdla::QuantizationMode::PER_FILTER:
-        PROPAGATE_ERROR_FAIL(profile->setQuantizationMode(nvdla::QuantizationMode::PER_FILTER));
-        break;
-      case nvdla::QuantizationMode::PER_KERNEL:
-      case nvdla::QuantizationMode::NONE:  // default to per-kernel; find a way to run int8 tests w/
-                                           // NONE qtzMode cleanly
-      default:
-        PROPAGATE_ERROR_FAIL(profile->setQuantizationMode(nvdla::QuantizationMode::PER_KERNEL));
-    }
-  } else {
-    PROPAGATE_ERROR_FAIL(profile->setTensorScalingMode(nvdla::TensorScalingMode::NONE));
-    PROPAGATE_ERROR_FAIL(profile->setQuantizationMode(nvdla::QuantizationMode::NONE));
-  }
-
-  PROPAGATE_ERROR_FAIL(profile->setNetworkOutputDataFormat(nvdla::DataFormat::NCxHWx));
-
-  if (std::strcmp(appArgs->configtarget.c_str(), "opendla-small") == 0)
-    PROPAGATE_ERROR_FAIL(profile->setNetworkOutputSurfaceFormat(nvdla::PixelFormat::FEATURE_X8));
-  else
-    PROPAGATE_ERROR_FAIL(profile->setNetworkOutputSurfaceFormat(nvdla::PixelFormat::FEATURE));
-
-  if (appArgs->numBatches > 0)
-    PROPAGATE_ERROR_FAIL(profile->setMultiBatchSize(appArgs->numBatches));
 
 fail:
   return e;
@@ -354,123 +239,6 @@ fail:
   return e;
 }
 
-NvDlaError generateProfile(const CompilerTestAppArgs* appArgs, std::string* profileName,
-                           CompilerTestInfo* i) {
-  NvDlaError e = NvDlaSuccess;
-  nvdla::DataFormat inDataFormat = nvdla::DataFormat::UNKNOWN;
-
-  // NvDlaDebugPrintf("ProfileName: %s \n", appArgs->profileName.c_str());
-
-  if (appArgs->profileName != "") {
-    // init named profile (basic/default/performance) with default params in its constructor and
-    // exit
-    PROPAGATE_ERROR_FAIL(beginWithNamedProfile(appArgs, i));
-    *profileName = appArgs->profileName;
-  } else if (appArgs->profileFile != "") {
-    // if named profile is absent, create a default profile
-    // and then populate it with params from the cfg file (overriding as necessary)
-    PROPAGATE_ERROR_FAIL(beginWithCfgProfile(appArgs, i, inDataFormat));
-    *profileName = appArgs->profileFile;
-    *profileName = profileName->substr(0, profileName->find_last_of("."));
-  } else {
-    ORIGINATE_ERROR_FAIL(NvDlaError_NotInitialized, "No profile supplied to load");
-  }
-
-  // capture profile params from command line (override the existing ones as necessary)
-  inDataFormat = inDataFormat == nvdla::DataFormat::UNKNOWN ? appArgs->inDataFormat : inDataFormat;
-  PROPAGATE_ERROR_FAIL(
-      updateProfileWithCmdLineArgs(appArgs, i, profileName->c_str(), inDataFormat));
-
-fail:
-  return e;
-}
-
-NvDlaError compileProfile(const CompilerTestAppArgs* appArgs, CompilerTestInfo* i, uint8_t** buffer,
-                          uint64_t* size) {
-  NvDlaError e = NvDlaSuccess;
-  std::string profileName = "";
-  std::string targetConfigName = "";
-
-  NvDlaFileHandle file = 0;
-  std::string fileName = "";
-  *buffer = 0;
-  *size = 0;
-
-  if (i->wisdom->getNetwork()->getNumOutputs() == 0) return e;
-  nvdla::ICompiler* compiler = i->wisdom->getCompiler();
-  if (!compiler) ORIGINATE_ERROR_FAIL(NvDlaError_BadParameter, "wisdom->getCompiler() failed");
-
-  if (!(appArgs->configtarget != ""))
-    ORIGINATE_ERROR_FAIL(NvDlaError_NotInitialized, "No target config found to load");
-
-  targetConfigName = appArgs->configtarget;
-
-  // Determine profile
-  PROPAGATE_ERROR_FAIL(generateProfile(appArgs, &profileName, i));
-
-  // Compile
-  NvDlaDebugPrintf("compiling profile \"%s\"... config \"%s\"...\n", profileName.c_str(),
-                   targetConfigName.c_str());
-  PROPAGATE_ERROR_FAIL(
-      compiler->compile(profileName.c_str(), targetConfigName.c_str(), &i->compiledLoadable));
-
-  // Get loadable buffer and dump it into a file
-  PROPAGATE_ERROR_FAIL(compiler->getLoadableImageSize(profileName.c_str(), size));
-  if (*size == 0) {
-    ORIGINATE_ERROR_FAIL(NvDlaError_BadParameter, "Invalid size for a loadable");
-  }
-
-  *buffer = (NvU8*)NvDlaAlloc(*size);
-  if (*buffer == NULL) {
-    ORIGINATE_ERROR_FAIL(NvDlaError_InsufficientMemory, "Failed to allocate buffer for loadable");
-  }
-  PROPAGATE_ERROR_FAIL(compiler->getLoadableImage(profileName.c_str(), *buffer));
-  fileName = profileName + ".nvdla";
-  PROPAGATE_ERROR_FAIL(NvDlaFopen(fileName.c_str(), NVDLA_OPEN_WRITE, &file));
-  PROPAGATE_ERROR_FAIL(NvDlaFwrite(file, *buffer, *size));
-
-fail:
-  NvDlaFclose(file);
-  // if (buffer != NULL)
-  //     NvDlaFree(buffer);
-  return e;
-}
-
-#if 0
-NvDlaError compile(const CompilerTestAppArgs* appArgs, CompilerTestInfo* i)
-{
-    NvDlaError e = NvDlaSuccess;
-
-    i->compiledLoadable = 0;
-
-    NvDlaDebugPrintf("creating new wisdom context...\n");
-    i->wisdom = nvdla::createWisdom();
-    if (!i->wisdom)
-        ORIGINATE_ERROR_FAIL(NvDlaError_BadParameter, "createWisdom() failed");
-
-    NvDlaDebugPrintf("opening wisdom context...\n");
-    if (!i->wisdom->open(i->wisdomPath))
-        ORIGINATE_ERROR_FAIL(NvDlaError_BadParameter, "wisdom->open() failed to open: \"%s\"", i->wisdomPath.c_str());
-
-    // Compile
-    PROPAGATE_ERROR_FAIL(compileProfile(appArgs, i));
-
-    NvDlaDebugPrintf("closing wisdom context...\n");
-    i->wisdom->close();
-
-fail:
-    if (i->wisdom != NULL) {
-        nvdla::destroyWisdom(i->wisdom);
-        i->wisdom = NULL;
-    }
-    return e;
-}
-#endif
-
-NvDlaError parseSetup(const CompilerTestAppArgs* appArgs, CompilerTestInfo* i) {
-  return NvDlaSuccess;
-}
-
 #if 0
 NvDlaError parseTensorScales(const CompilerTestAppArgs* appArgs, CompilerTestInfo *i, nvdla::INetwork* network)
 {
@@ -568,162 +336,55 @@ NvDlaError parseTensorScales(const CompilerTestAppArgs* appArgs, CompilerTestInf
   NvDlaStatType stat;
 
   // populate the scaling factor/dynamic range of each of the tensors on the network
-  {
-    {
-      std::vector<nvdla::ILayer*> networkLayers = network->getLayers();
-      std::vector<nvdla::ITensor*> networkInputs = network->getInputs();
+  std::vector<nvdla::ILayer*> networkLayers = network->getLayers();
+  std::vector<nvdla::ITensor*> networkInputs = network->getInputs();
 
-      std::vector<nvdla::ILayer*>::iterator li = networkLayers.begin();
-      std::vector<nvdla::ITensor*>::iterator nii = networkInputs.begin();
+  std::vector<nvdla::ILayer*>::iterator li = networkLayers.begin();
+  std::vector<nvdla::ITensor*>::iterator nii = networkInputs.begin();
 
-      // set scaling factor for the network input tensors
-      std::string index_str;
-      for (int i = 0; nii != networkInputs.end(); ++nii, ++i) {
-        NvF32 scale = 1.0f;
-        // just for debug
-        if (!calibdata.empty())
-          scale = i_scale_Vec[i][0];  // DLA Node has single input
-        NvF32 min = scale * -127.0f;
-        NvF32 max = scale * 127.0f;
-        std::string tName = (*nii)->getName();
+  // set scaling factor for the network input tensors
+  std::string index_str;
+  for (int i = 0; nii != networkInputs.end(); ++nii, ++i) {
+    NvF32 scale = 1.0f;
+    // just for debug
+    if (!calibdata.empty())
+      scale = i_scale_Vec[i][0];  // DLA Node has single input
+    NvF32 min = scale * -127.0f;
+    NvF32 max = scale * 127.0f;
+    std::string tName = (*nii)->getName();
 
-        LOG(INFO) << "network->networkInputs() tName: " << tName;
-        LOG(INFO) << "network->networkInputs() scale: " << scale;
+    LOG(INFO) << "network->networkInputs() tName: " << tName;
+    LOG(INFO) << "network->networkInputs() scale: " << scale;
 
-        // set same dynamic range for all channels of the tensor (cIndex = -1)
-        PROPAGATE_ERROR_FAIL((*nii)->setChannelDynamicRange(-1, min, max));
-        const_cast<CompilerTestAppArgs*>(appArgs)->tensorScales.insert(
-            std::pair<std::string, NvF32>(tName, scale));
-      }
+    // set same dynamic range for all channels of the tensor (cIndex = -1)
+    PROPAGATE_ERROR_FAIL((*nii)->setChannelDynamicRange(-1, min, max));
+    const_cast<CompilerTestAppArgs*>(appArgs)->tensorScales.insert(
+        std::pair<std::string, NvF32>(tName, scale));
+  }
 
-      for (int i = 0; li != networkLayers.end(); ++li, ++i) {
-        NvF32 scale = 1.0f;
-        // just for debug
-        if (!calibdata.empty())
-          scale = calibdata[i];
+  for (int i = 0; li != networkLayers.end(); ++li, ++i) {
+    NvF32 scale = 1.0f;
+    // just for debug
+    if (!calibdata.empty())
+      scale = calibdata[i];
 
-        NvF32 min = scale * -127.0f;
-        NvF32 max = scale * 127.0f;
-        std::string lName = (*li)->getName();
-        nvdla::ITensor* outTensor = (*li)->getOutput(0);
+    NvF32 min = scale * -127.0f;
+    NvF32 max = scale * 127.0f;
+    std::string lName = (*li)->getName();
+    nvdla::ITensor* outTensor = (*li)->getOutput(0);
 
-        LOG(INFO) << "network->networkLayers() lName: " << lName;
-        LOG(INFO) << "network->networkLayers() scale: " << scale;
+    LOG(INFO) << "network->networkLayers() lName: " << lName;
+    LOG(INFO) << "network->networkLayers() scale: " << scale;
 
-        // set same dynamic range for all channels of the tensor (cIndex = -1)
-        PROPAGATE_ERROR_FAIL(outTensor->setChannelDynamicRange(-1, min, max));
-        const_cast<CompilerTestAppArgs*>(appArgs)->tensorScales.insert(
-            std::pair<std::string, NvF32>(lName, scale));
-      }
-    }
+    // set same dynamic range for all channels of the tensor (cIndex = -1)
+    PROPAGATE_ERROR_FAIL(outTensor->setChannelDynamicRange(-1, min, max));
+    const_cast<CompilerTestAppArgs*>(appArgs)->tensorScales.insert(
+        std::pair<std::string, NvF32>(lName, scale));
   }
 
 fail:
   return e;
 }
-
-
-static NvDlaError relay2network(const CompilerTestAppArgs* appArgs, CompilerTestInfo* i,
-                                const tvm::relay::Function& func, IRelayParser* parser,
-                                std::vector<float>& calibdata, std::vector<std::vector<float>> i_scale_Vec) {
-  //LOG(INFO) << "relay2network";
-  NVDLA_UNUSED(appArgs);
-  NvDlaError e = NvDlaSuccess;
-
-  nvdla::INetwork* network = NULL;
-
-  const IBlobNameToTensor* b = NULL;
-  std::string caffePrototxtFile = appArgs->prototxt.c_str();
-  std::string caffeModelFile = appArgs->caffemodel.c_str();
-
-  network = nvdla::createNetwork();
-  if (!network) ORIGINATE_ERROR_FAIL(NvDlaError_BadParameter, "createNetwork() failed");
-
-  NvDlaDebugPrintf("parsing caffe network...\n");
-  b = parser->parse(caffePrototxtFile.c_str(), caffeModelFile.c_str(), func, network);
-  if (!b)
-    ORIGINATE_ERROR_FAIL(NvDlaError_BadParameter, "Unable to parse caffemodel: \"%s\"",
-                         caffePrototxtFile.c_str());
-  // if the application has so far not marked the network's outputs, allow the parser to do so now
-  if (network->getNumOutputs() <= 0) {
-    int outs = parser->identifyOutputs(network);
-    NvDlaDebugPrintf("Marking total %d outputs\n", outs);
-  }
-
-  if (appArgs->computePrecision == nvdla::DataType::INT8) {
-    NvDlaDebugPrintf("parsing calibration table...\n");
-    PROPAGATE_ERROR_FAIL(parseTensorScales(appArgs, i, network, calibdata, i_scale_Vec));
-  }
-
-  NvDlaDebugPrintf("attaching parsed network to the wisdom...\n");
-  if (!i->wisdom->setNetworkTransient(network))
-    ORIGINATE_ERROR_FAIL(NvDlaError_BadParameter, "wisdom->setNetworkTransient() failed");
-
-  return NvDlaSuccess;
-
-fail:
-  return e;
-}
-NvDlaError parseAndCompile(const CompilerTestAppArgs* appArgs, CompilerTestInfo* i,
-                           const tvm::relay::Function& func, uint8_t** buf, uint64_t* size,
-                           std::vector<float>& calibdata, std::vector<std::vector<float>> i_scale_Vec) {
-  NvDlaError e = NvDlaSuccess;
-  bool isCaffe = false;  // appArgs->caffemodel != "";
-  bool isRelay = true;
-  IRelayParser* parser = tvm::relay::contrib::aipu::createRelayParser();
-  PROPAGATE_ERROR_FAIL(parseSetup(appArgs, i));
-
-  NvDlaDebugPrintf("creating new wisdom context...\n");
-  i->wisdom = nvdla::createWisdom();
-  if (!i->wisdom) ORIGINATE_ERROR_FAIL(NvDlaError_BadParameter, "createWisdom() failed");
-
-  NvDlaDebugPrintf("opening wisdom context...\n");
-  if (!i->wisdom->open(i->wisdomPath))
-    ORIGINATE_ERROR_FAIL(NvDlaError_BadParameter, "wisdom->open() failed to open: \"%s\"",
-                         i->wisdomPath.c_str());
-
-  // Parse
-  // if (isCaffe){
-  //     PROPAGATE_ERROR_FAIL(parseCaffeNetwork(appArgs, i, doc, index));
-  // }
-  else if (isRelay) {
-    PROPAGATE_ERROR_FAIL(relay2network(appArgs, i, func, parser, calibdata, i_scale_Vec));
-  } else {
-    ORIGINATE_ERROR_FAIL(NvDlaError_BadParameter, "Unknown network type encountered");
-  }
-  // Compile
-  PROPAGATE_ERROR_FAIL(compileProfile(appArgs, i, buf, size));
-
-  /* Destroy network before closing wisdom context */
-  nvdla::destroyNetwork(i->wisdom->getNetwork());
-
-  NvDlaDebugPrintf("closing wisdom context...\n");
-  i->wisdom->close();
-  destroyRelayParser(parser);
-
-fail:
-  if (i->wisdom != NULL) {
-    nvdla::destroyWisdom(i->wisdom);
-    i->wisdom = NULL;
-  }
-  return e;
-}
-
-NvDlaError launchTest(const CompilerTestAppArgs* appArgs, const tvm::relay::Function& func,
-                      CompilerTestInfo* testInfo, uint8_t** buf, uint64_t* size,
-                      std::vector<float>& calibdata, std::vector<std::vector<float>> i_scale_Vec) {
-  NvDlaError e = NvDlaSuccess;
-
-  PROPAGATE_ERROR_FAIL(testSetup(appArgs, testInfo));
-
-  PROPAGATE_ERROR_FAIL(parseAndCompile(appArgs, testInfo, func, buf, size, calibdata, i_scale_Vec));
-
-  return NvDlaSuccess;
-
-fail:
-  return e;
-}
-
 
 class CollectOutput : public tvm::relay::ExprMutator {
   using Expr = tvm::RelayExpr;
@@ -780,24 +441,23 @@ class CustomizedAnnotation : tvm::relay::ExprMutator {
             if (arg1->IsInstance<tvm::relay::ConstantNode>()) {
               if (arg_op_name == "nn.conv2d" || arg_op_name == "nn.dense") return false;
             }
+          } else {
+            auto arg1 = call_node->args[1];
+            if (arg1->IsInstance<tvm::relay::CallNode>()) {
+              const tvm::relay::CallNode* arg1_call = arg1.as<tvm::relay::CallNode>();
+              auto* arg1_op_node = arg1_call->op.as<tvm::relay::OpNode>();
+              const auto arg1_op_name = tvm::runtime::GetRef<tvm::relay::Op>(arg1_op_node)->name;
+              if (arg1_op_name == "relay.op.annotation.simulated_quantize" || arg1_op_name == "annotation.cast_hint"
+              || arg1_op_name == "annotation.stop_fusion") {
+                for (auto parent : child_parent_[expr]) {
+                  const tvm::relay::CallNode* parent_call = parent.as<tvm::relay::CallNode>();
+                  auto* parent_op_node = parent_call->op.as<tvm::relay::OpNode>();
+                  const auto parent_op_name = tvm::runtime::GetRef<tvm::relay::Op>(parent_op_node)->name;
+                  if (parent_op_name == "relay.op.annotation.simulated_quantize") return false;
+                }
+              }
+            }
           }
-	  else {
-	    auto arg1 = call_node->args[1];
-	    if (arg1->IsInstance<tvm::relay::CallNode>()) {
-	      const tvm::relay::CallNode* arg1_call = arg1.as<tvm::relay::CallNode>();
-	      auto* arg1_op_node = arg1_call->op.as<tvm::relay::OpNode>();
-	      const auto arg1_op_name = tvm::runtime::GetRef<tvm::relay::Op>(arg1_op_node)->name;
-	      if (arg1_op_name == "relay.op.annotation.simulated_quantize" || arg1_op_name == "annotation.cast_hint"
-		  || arg1_op_name == "annotation.stop_fusion") {
-		for (auto parent : child_parent_[expr]) {
-		  const tvm::relay::CallNode* parent_call = parent.as<tvm::relay::CallNode>();
-		  auto* parent_op_node = parent_call->op.as<tvm::relay::OpNode>();
-		  const auto parent_op_name = tvm::runtime::GetRef<tvm::relay::Op>(parent_op_node)->name;
-		  if (parent_op_name == "relay.op.annotation.simulated_quantize") return false;
-		}
-	      }
-	    }
-	  }
         }
       //} else if (op_name == "reshape" || op_name == "mean" || op_name == "squeeze") {
       } else if (op_name == "reshape" || op_name == "squeeze") {
@@ -808,13 +468,13 @@ class CustomizedAnnotation : tvm::relay::ExprMutator {
           const auto arg_op_name = tvm::runtime::GetRef<tvm::relay::Op>(arg_op_node)->name;
           if (arg_op_name == "relay.op.annotation.simulated_quantize" || arg_op_name == "annotation.cast_hint"
 	      || arg_op_name == "annotation.stop_fusion") {
-	    for (auto parent : child_parent_[expr]) {
-	      const tvm::relay::CallNode* parent_call = parent.as<tvm::relay::CallNode>();
-	      auto* parent_op_node = parent_call->op.as<tvm::relay::OpNode>();
-	      const auto parent_op_name = tvm::runtime::GetRef<tvm::relay::Op>(parent_op_node)->name;
-	      if (parent_op_name == "relay.op.annotation.simulated_quantize") return false;
-	    }
-	  }
+            for (auto parent : child_parent_[expr]) {
+              const tvm::relay::CallNode* parent_call = parent.as<tvm::relay::CallNode>();
+              auto* parent_op_node = parent_call->op.as<tvm::relay::OpNode>();
+              const auto parent_op_name = tvm::runtime::GetRef<tvm::relay::Op>(parent_op_node)->name;
+              if (parent_op_name == "relay.op.annotation.simulated_quantize") return false;
+            }
+          }
         }
       }
     }
@@ -885,15 +545,14 @@ class CustomizedAnnotation : tvm::relay::ExprMutator {
         } else if (arg->IsInstance<VarNode>()) {
           arg = tvm::relay::Call(compiler_begin, {arg}, tvm::Attrs(attrs_default), {});
           callop_on_default_device = true;
-        } 
-	else {
-	  // ConstantNode or TupleGetItemNode
-	  if (callop_on_default_device) {
+        } else {
+          // ConstantNode or TupleGetItemNode
+          if (callop_on_default_device) {
             arg = tvm::relay::Call(compiler_begin, {arg}, tvm::Attrs(attrs_default), {});
           } else {
             arg = tvm::relay::Call(compiler_begin, {arg}, tvm::Attrs(attrs_compiler), {});
           }
-	}
+        }
       } else if (callop_name == "annotation.stop_fusion" || callop_name == "annotation.cast_hint") {
         if (arg->IsInstance<CallNode>()) {
           const CallNode* arg_call = arg.as<tvm::relay::CallNode>();
@@ -948,6 +607,25 @@ class CustomizedAnnotation : tvm::relay::ExprMutator {
     }
     return result;
   }
+
+  Expr VisitExpr_(const TupleNode* tuple_node) final {
+    auto compiler_begin = tvm::relay::Op::Get("annotation.compiler_begin");
+    auto compiler_end = tvm::relay::Op::Get("annotation.compiler_end");
+    auto attrs_compiler = tvm::runtime::make_object<tvm::relay::CompilerAttrs>();
+    auto attrs_default = tvm::runtime::make_object<tvm::relay::CompilerAttrs>();
+    attrs_compiler->compiler = compiler_;
+    attrs_default->compiler = "riscv";
+
+    tvm::Array<Expr> fields;
+    for (auto field : tuple_node->fields) {
+      field = VisitExpr(field);
+      field = tvm::relay::Call(compiler_begin, {field}, tvm::Attrs(attrs_default), {});
+      fields.push_back(field);
+    }
+    Expr result = tvm::relay::Tuple(fields);
+    result = tvm::relay::Call(compiler_end, {result}, tvm::Attrs(attrs_default), {});
+    return result;
+  }
   
   tvm::relay::Function annotate(tvm::relay::Function func) {
     auto new_expr = VisitExpr(func);
@@ -986,16 +664,15 @@ class CustomizedAnnotation : tvm::relay::ExprMutator {
                                                {"tanh", 2},
                                                {"nn.dense", 0},
                                                {"mean", 1},
-                                               //////////////////////////
+                                               {"squeeze", 1},
                                                {"nn.max_pool2d", 2},
                                                {"nn.avg_pool2d", 2},
-                                               //////////////////////////
-                                               {"squeeze", 1}};
+                                               {"featuretoweight", 2},
+                                               {"AIPU_GELU", 2},
+                                               {"AIPU_NORM", 2}};
 
   std::map<std::string, int> dla_operator = {
       {"nn.leaky_relu", 2}, {"nn.dense", 1}, {"nn.conv2d", 2},     {"nn.relu", 2},
-      // {"add", 0},           {"nn.pad", 2},   {"nn.max_pool2d", 2}, {"mean", 0},
-      // {"nn.avg_pool2d", 2}, {"squeeze", 0},  {"clip", 2}/*, {"reshape", 0}*/};
       {"add", 0},           {"nn.pad", 2},   {"nn.max_pool2d", 1}, {"mean", 0},
       {"nn.avg_pool2d", 1}, {"squeeze", 0},  {"clip", 2}/*, {"reshape", 0}*/};
   std::map<Expr, std::vector<Expr>> child_parent_;
@@ -1009,6 +686,35 @@ tvm::IRModule module_partition(tvm::IRModule module) {
                                               "squeeze",
                                               "nn.max_pool2d",
                                               "nn.avg_pool2d"};
+  // std::set<std::string> riscv_operator_set = {"nn.softmax",
+  //                                             "concatenate",
+  //                                             "image.resize",
+  //                                             "strided_slice",
+  //                                             "reshape",
+  //                                             "multiply",
+  //                                             "exp",
+  //                                             "sigmoid",
+  //                                             "add",
+  //                                             "less",
+  //                                             "where",
+  //                                             "take",
+  //                                             "subtract",
+  //                                             "power",
+  //                                             "sqrt",
+  //                                             "divide",
+  //                                             "nn.batch_matmul",
+  //                                             "transpose",
+  //                                             "expand_dims",
+  //                                             "cast",
+  //                                             "max",
+  //                                             "sum",
+  //                                             "erf",
+  //                                             "split",
+  //                                             "one_hot",
+  //                                             "tanh",
+  //                                             "nn.dense",
+  //                                             "mean",
+  //                                             "squeeze"};
   std::set<std::string> dla_operator_set = {"nn.leaky_relu", "nn.dense", "nn.conv2d",     "nn.relu",
                                             "add",           "nn.pad",   "nn.max_pool2d", "mean",
                                             "nn.avg_pool2d", "squeeze",  "clip"};
@@ -1072,6 +778,7 @@ tvm::IRModule module_partition(tvm::IRModule module) {
   };
 
   auto register_op_attr = tvm::relay::backend::GetPackedFunc("ir.RegisterOpAttr");
+  // AIPU. TODO. Is pattern_riscv and pattern_dla used?
   for (auto op_name : riscv_operator_set) {
     (*register_op_attr)(op_name, "target.riscv", pattern_riscv, 10);
   }
@@ -1450,7 +1157,7 @@ tvm::IRModule eliminate_tuplenode(tvm::IRModule module) {
           mod = tvm::relay::transform::Inline()(mod);
           mod = tvm::relay::transform::InferType()(mod);
           new_func = tvm::runtime::Downcast<Function>(mod->Lookup("main"));
-          new_func = WithAttr(std::move(new_func), "global_symbol", symbol_name.value());
+          new_func = WithAttr(std::move(new_func), tvm::attr::kGlobalSymbol, symbol_name.value());
           new_func = WithAttr(std::move(new_func), tvm::relay::attr::kCompiler,
                               tvm::runtime::String("dla"));
 
@@ -1492,7 +1199,7 @@ std::pair<uint64_t, uint8_t*> CompileFunc4Dla(Function func, std::vector<float> 
     return std::pair<uint64_t, uint8_t*>(0, nullptr);
   }
   auto symbol_name = func->GetAttr<String>(tvm::attr::kGlobalSymbol);
-  func = WithAttr(std::move(func), "global_symbol", runtime::String("main"));
+  func = WithAttr(std::move(func), tvm::attr::kGlobalSymbol, runtime::String("main"));
   func = WithAttr(std::move(func), attr::kCompiler, NullValue<ObjectRef>());
   auto mod = tvm::IRModule::FromExpr(func);
   std::string ext_patterntable = "relay.ext.aipu.patterntable";
@@ -1510,23 +1217,141 @@ std::pair<uint64_t, uint8_t*> CompileFunc4Dla(Function func, std::vector<float> 
                                     checksfunc)(mod);
   }
   auto funcmod = Downcast<Function>(mod->Lookup("main"));
-  funcmod = WithAttr(std::move(funcmod), "global_symbol", symbol_name.value());
-  // LOG(INFO) << AsText(funcmod, false);
+  funcmod = WithAttr(std::move(funcmod), tvm::attr::kGlobalSymbol, symbol_name.value());
 
-  // second relay2network follow nvdla
-  NvDlaError e = NvDlaError_TestApplicationFailed;
   CompilerTestAppArgs testAppArgs = defaultCompilerTestAppArgs;
   CompilerTestInfo testInfo;
-  uint8_t* buf = 0;
-  uint64_t size;
 
-  testAppArgs.prototxt = "/home/hermanhe/tmp/caffe/LeNet/lenet.prototxt";
-  testAppArgs.caffemodel = "/home/hermanhe/tmp/caffe/LeNet/lenet_iter_10000.caffemodel";
-  e = launchTest(&testAppArgs, funcmod, &testInfo, &buf, &size, calibdata, i_scale_Vec);
-  if (e != NvDlaSuccess) LOG(FATAL) << "NVDLA compilation failed" << std::endl;
+  std::string wisdomPath = testAppArgs.outputPath + "wisdom.dir/";
+  std::string removeCmd = "rm -rf " + wisdomPath;
+  if (std::system(removeCmd.c_str()) != 0) LOG(FATAL) << "system command failed: " << removeCmd;
+  NvDlaMkdir(const_cast<char*>(wisdomPath.c_str()));
+  testInfo.wisdom = nullptr;
+  testInfo.wisdomPath = wisdomPath;
+  testInfo.pData = nullptr;
+
+  IRelayParser* parser = tvm::relay::contrib::aipu::createRelayParser();
+  LOG(INFO) << "creating new wisdom context...";
+  testInfo.wisdom = nvdla::createWisdom();
+  if (!testInfo.wisdom) LOG(FATAL) << "createWisdom() failed";
+  LOG(INFO) << "opening wisdom context...";
+  if (!testInfo.wisdom->open(testInfo.wisdomPath))
+    LOG(FATAL) << "wisdom->open() failed to open: " << testInfo.wisdomPath;
+
+  // IR translation: relay to INetwork
+  nvdla::INetwork* network = NULL;
+  network = nvdla::createNetwork();
+  if (!network) LOG(FATAL) << "createNetwork() failed";
+  const IBlobNameToTensor* b = NULL;
+  b = parser->parse("", "", funcmod, network);
+  if (network->getNumOutputs() <= 0) {
+    int outs = parser->identifyOutputs(network);
+    LOG(INFO) << "Marking total " << outs << " outputs";
+  }
+  if (testAppArgs.computePrecision == nvdla::DataType::INT8) {
+    LOG(INFO) << "parsing calibration table...";
+    parseTensorScales(&testAppArgs, &testInfo, network, calibdata, i_scale_Vec);
+  }
+  LOG(INFO) << "attaching parsed network to the wisdom...";
+  if (!testInfo.wisdom->setNetworkTransient(network)) LOG(FATAL) << "wisdom->setNetworkTransient() failed";
+
+  // compile INetwork to loadable
+  if (testInfo.wisdom->getNetwork()->getNumOutputs() == 0) LOG(FATAL) << "output number is 0";
+  nvdla::ICompiler* compiler = testInfo.wisdom->getCompiler();
+  if (!compiler) LOG(FATAL) << "wisdom->getCompiler() failed";
+  if (testAppArgs.configtarget == "") LOG(FATAL) << "No target config found to load";
+
+  std::string profileName = "";
+  nvdla::DataFormat inDataFormat = nvdla::DataFormat::UNKNOWN;
+  if (testAppArgs.profileName != "") {
+    beginWithNamedProfile(&testAppArgs, &testInfo);
+    profileName = testAppArgs.profileName;
+  } else if (testAppArgs.profileFile != "") {
+    beginWithCfgProfile(&testAppArgs, &testInfo, inDataFormat);
+    profileName = testAppArgs.profileFile;
+    profileName = profileName.substr(0, profileName.find_last_of("."));
+  } else {
+    LOG(FATAL) << "No profile supplied to load";
+  }
+  inDataFormat = inDataFormat == nvdla::DataFormat::UNKNOWN ? testAppArgs.inDataFormat : inDataFormat;
+
+  nvdla::IProfiler* profiler;
+  nvdla::IProfile* profile;
+  profiler = testInfo.wisdom->getProfiler();
+  if (!profiler) LOG(FATAL) << "wisdom->getProfiler() failed";
+  profile = profiler->getProfile(profileName.c_str());
+  if (!profile) LOG(FATAL) << "profiler->getProfile() failed";
+  profile->setComputePrecision(testAppArgs.computePrecision);
+  profile->setNetworkInputDataFormat(inDataFormat);
+
+  switch (inDataFormat) {
+    case nvdla::DataFormat::NHWC:
+      if (testAppArgs.computePrecision == nvdla::DataType::HALF) {
+        profile->setNetworkInputSurfaceFormat(nvdla::PixelFormat::A16B16G16R16_F);
+      } else if (testAppArgs.computePrecision == nvdla::DataType::INT8) {
+        profile->setNetworkInputSurfaceFormat(nvdla::PixelFormat::FEATURE); // A8B8G8R8 R8 FEATURE
+      } else {
+        LOG(FATAL) << "NHWC and compute precision " << testAppArgs.computePrecision.v() << " is not yet supported";
+      }
+      break;
+    case nvdla::DataFormat::NCxHWx:
+    case nvdla::DataFormat::NCHW:
+    case nvdla::DataFormat::UNKNOWN:  // atleast start the test with feature data format
+    default:
+      if (std::strcmp(testAppArgs.configtarget.c_str(), "opendla-small") == 0)
+        profile->setNetworkInputSurfaceFormat(nvdla::PixelFormat::FEATURE_X8);
+      else
+        profile->setNetworkInputSurfaceFormat(nvdla::PixelFormat::FEATURE);
+  }
+  if (testAppArgs.computePrecision == nvdla::DataType::INT8) {
+    profile->setTensorScalingMode(nvdla::TensorScalingMode::PER_TENSOR);
+    //switch (appArgs->quantizationMode) {
+    switch (theQuantizationMode) {
+      case nvdla::QuantizationMode::PER_FILTER:
+        profile->setQuantizationMode(nvdla::QuantizationMode::PER_FILTER);
+        break;
+      case nvdla::QuantizationMode::PER_KERNEL:
+      case nvdla::QuantizationMode::NONE:  // default to per-kernel; find a way to run int8 tests w/
+                                           // NONE qtzMode cleanly
+      default:
+        profile->setQuantizationMode(nvdla::QuantizationMode::PER_KERNEL);
+    }
+  } else {
+    profile->setTensorScalingMode(nvdla::TensorScalingMode::NONE);
+    profile->setQuantizationMode(nvdla::QuantizationMode::NONE);
+  }
+
+  profile->setNetworkOutputDataFormat(nvdla::DataFormat::NCxHWx);
+
+  if (std::strcmp(testAppArgs.configtarget.c_str(), "opendla-small") == 0)
+    profile->setNetworkOutputSurfaceFormat(nvdla::PixelFormat::FEATURE_X8);
+  else
+    profile->setNetworkOutputSurfaceFormat(nvdla::PixelFormat::FEATURE);
+
+  if (testAppArgs.numBatches > 0)
+    profile->setMultiBatchSize(testAppArgs.numBatches);
+
+  compiler->compile(profileName.c_str(), testAppArgs.configtarget.c_str(), &(testInfo.compiledLoadable));
+  uint64_t size = 0;
+  compiler->getLoadableImageSize(profileName.c_str(), &size);
+  if (size == 0) LOG(FATAL) << "Invalid size for a loadable";
+  uint8_t* buf = nullptr;
+  buf = (NvU8*)NvDlaAlloc(size);
+  if (buf == nullptr) LOG(FATAL) << "Failed to allocate buffer for loadable";
+  compiler->getLoadableImage(profileName.c_str(), buf);
+
+  // Destroy network before closing wisdom context 
+  nvdla::destroyNetwork(testInfo.wisdom->getNetwork());
+  LOG(INFO) << "closing wisdom context...";
+  testInfo.wisdom->close();
+  destroyRelayParser(parser);
+  if (testInfo.wisdom != nullptr) {
+    nvdla::destroyWisdom(testInfo.wisdom);
+    testInfo.wisdom = nullptr;
+  }
   return std::pair<uint64_t, uint8_t*>(size, buf);
 }
-// used for dense split
+
 /**
  * @brief dense split
  * VisitExpr by ExprMutator, functionally updates the AST.
@@ -1683,6 +1508,7 @@ class DenseExpr : public ExprMutator {
     }
 
     int64_t spTh = data_shape_row / sp_n_part;
+
     int index = 0;
     tvm::RelayExpr slice[sp_n_part];
     tvm::RelayExpr dense[sp_n_part];
@@ -1717,7 +1543,8 @@ class DenseExpr : public ExprMutator {
       }else{
         dense[i] = MakeDense(slice[i], weight_split[i], dense_channels,DataType::Float(32));
       }
-
+	  
+      //"add" after dense needed
       auto add_op = relay::Op::Get("add");
       auto c_data = tvm::runtime::NDArray::Empty({dense_channels}, {kDLFloat, 32, 1}, {kDLCPU, 0});
       auto c1 = relay::Constant(c_data);
@@ -1750,7 +1577,7 @@ class DenseExpr : public ExprMutator {
     return sp_dense_call;
   }
 
-  Call Layout_weights(const CallNode* op, const CallNode* reshape_call){    
+  Call Layout_weights(const CallNode* op, const CallNode* reshape_call) {
     //const tvm::relay::CallNode* reshape_call = op->args[0].as<tvm::relay::CallNode>();
     if (!reshape_call)
       LOG(FATAL) << "arg error" << AsText(op->args[0], false);
@@ -1896,7 +1723,6 @@ class DenseExpr : public ExprMutator {
           const auto arg_op_name = GetRef<Op>(arg_op_node)->name;
           //LOG(INFO) << "arg_op_name: " << arg_op_name;
           if (arg_op_name == "reshape"){  
-              LOG(INFO) << "!!!!!!!!!!!!!!!!!!!!reshape!!!!!!!!!!!!!!!!!!!" ;
               return Layout_weights(op, arg_call);
             }
           }
@@ -2104,7 +1930,6 @@ class Conv2dExpr : public ExprMutator {
       }
 	  
       int64_t spTh = C / sp_n_part;
-      int index = 0;
       tvm::RelayExpr slice[sp_n_part];
       tvm::RelayExpr conv2d[sp_n_part];
       tvm::RelayExpr conv2d_exp[sp_n_part];
@@ -2159,7 +1984,7 @@ class Conv2dExpr : public ExprMutator {
         }else{
           conv2d[i] = tvm::relay::Call(opC, {slice[i], weight_split[i]}, Attrs(attrs), {});
         }
-        
+		
         //"add" after conv2d needed
         auto add_op = relay::Op::Get("add");
         auto c_data = tvm::runtime::NDArray::Empty({N}, {kDLFloat, 32, 1}, {kDLCPU, 0});
@@ -2305,13 +2130,32 @@ class GenCalibdata : public ExprVisitor {
     const auto* op_node = call->op.as<OpNode>();
     const auto op_name = GetRef<Op>(op_node)->name;
 
-    LOG(INFO) << "test scale op_name: " << op_name;
+    //LOG(INFO) << "test scale op_name: " << op_name;
     if (op_name == "relay.op.annotation.simulated_quantize") {
       float scale;
       if (call->args[0]->IsInstance<CallNode>()) {
         const CallNode* arg_call = call->args[0].as<CallNode>();
         auto* arg_op_node = arg_call->op.as<OpNode>();
         const auto arg_op_name = tvm::runtime::GetRef<Op>(arg_op_node)->name;
+        // if (arg_op_name == "mean" || arg_op_name == "nn.max_pool2d" || arg_op_name == "nn.avg_pool2d") {  // Quantitative penetration
+        //   if (arg_call->args[0]->IsInstance<CallNode>()) {
+        //     const CallNode* pre_call = arg_call->args[0].as<CallNode>();
+        //     auto* pre_op_node = pre_call->op.as<OpNode>();
+        //     const auto pre_op_name = tvm::runtime::GetRef<Op>(pre_op_node)->name;
+        //     if (pre_op_name == "relay.op.annotation.simulated_quantize") {
+        //       auto argconst = Downcast<Constant>(pre_call->args[1]);
+        //       scale = *((float*)argconst->data->data);
+        //     } else if (pre_op_name == "annotation.cast_hint") {
+        //       const CallNode* pre_arg_call = pre_call->args[0].as<CallNode>();
+        //       auto argconst = Downcast<Constant>(pre_arg_call->args[1]);
+        //       scale = *((float*)argconst->data->data);
+        //     } else {
+        //       return;
+        //     }
+        //   } else if (arg_call->args[0]->IsInstance<VarNode>()) {
+        //     scale = inscle_vec[0][0];  // Jasper TODO
+        //   }
+        // } 
         if (arg_op_name == "nn.pad" || compiler_ == "dla" && arg_op_name == "reshape") {
           return;
         } else {
@@ -2324,8 +2168,8 @@ class GenCalibdata : public ExprVisitor {
       }
 
       calibdata_.push_back(scale);
-      LOG(INFO) << "pass relay.op.annotation.simulated_quantize!";
-      LOG(INFO) << "scale: " << scale;
+      //LOG(INFO) << "pass relay.op.annotation.simulated_quantize!";
+      //LOG(INFO) << "scale: " << scale;
 
       op_out_scale_map_.insert(std::pair<Expr, float>(call->args[0], scale));
     }
@@ -2341,9 +2185,34 @@ class GenCalibdata : public ExprVisitor {
       const CallNode* call = body.as<CallNode>();
       auto* op_node = call->op.as<tvm::OpNode>();
       const auto op_name = tvm::runtime::GetRef<Op>(op_node)->name;
+      // if (op_name == "mean" || op_name == "nn.max_pool2d" || op_name == "nn.avg_pool2d"){
+      //   if (op_name == "relay.op.annotation.simulated_quantize") { 
+      //   auto argconst = Downcast<Constant>(call->args[1]);
+      //   float scale = *((float*)argconst->data->data);
+      //   subfunc_out_scale.push_back(scale);
+      //   } else if (op_name == "annotation.cast_hint") {
+      //     const CallNode* arg_call = call->args[0].as<CallNode>();
+      //     auto argconst = Downcast<Constant>(arg_call->args[1]);
+      //     float scale = *((float*)argconst->data->data);
+      //     subfunc_out_scale.push_back(scale);
+      //     }
+      //   } 
       if (op_name == "relay.op.annotation.simulated_quantize") { 
         auto argconst = Downcast<Constant>(call->args[1]);
         float scale = *((float*)argconst->data->data);
+        subfunc_out_scale.push_back(scale);
+      } else if (op_name == "annotation.cast_hint") {
+        const CallNode* arg_call = call->args[0].as<CallNode>();
+        auto argconst = Downcast<Constant>(arg_call->args[1]);
+        float scale = *((float*)argconst->data->data);
+        subfunc_out_scale.push_back(scale);
+      }
+      // For extended conv op, we need to add a featuretoweight op. deal with separately
+      else if (call->op == Op::Get("featuretoweight")) {
+        // we assume its arg is relay.op.annotation.simulated_quantize. TODO: what if this is not the case?
+	    const CallNode* arg_call = call->args[0].as<CallNode>();
+	    auto argconst = Downcast<Constant>(arg_call->args[1]);
+	    float scale = *((float*)argconst->data->data);
         subfunc_out_scale.push_back(scale);
       }
     } else if (body->IsInstance<TupleNode>()) {
@@ -2357,7 +2226,22 @@ class GenCalibdata : public ExprVisitor {
             auto argconst = Downcast<Constant>(node->args[1]);
             float scale = *((float*)argconst->data->data);
             subfunc_out_scale.push_back(scale);
-          } else {
+          } else if (op_name == "annotation.cast_hint") {
+            const CallNode* arg_call = node->args[0].as<CallNode>();
+            auto argconst = Downcast<Constant>(arg_call->args[1]);
+            float scale = *((float*)argconst->data->data);
+            subfunc_out_scale.push_back(scale);
+          }
+          // For extended conv op, we need to add a featuretoweight op. deal with separately
+          //else if (field->op == Op::Get("featuretoweight")) {}
+          else if (op_name == "featuretoweight") {
+            // we assume its arg is relay.op.annotation.simulated_quantize. TODO: what if this is not the case?
+            const CallNode* arg_call = node->args[0].as<CallNode>();
+            auto argconst = Downcast<Constant>(arg_call->args[1]);
+            float scale = *((float*)argconst->data->data);
+            subfunc_out_scale.push_back(scale);
+          }
+          else {
             subfunc_out_scale.push_back(-1.0f);
           }
           subfunc_out_Expr.push_back(field);
@@ -2394,14 +2278,12 @@ class GenCalibdata : public ExprVisitor {
   std::string compiler_;
 };
 
-
 // used for traversal fused function
 class TraversalModule : public ExprVisitor {
  public:
   // yuanyue 20220622 plan memory
-  // yuanyue 20220622 plan memory
-  TraversalModule(Map<Expr, Array<IntegerArray>> storage_device_map,  Map<Expr, Array<IntegerArray>> aid_dtype_map,std::map<int, size_t> temporary_data_storage
-                  , std::map<int, size_t> temporary_data_offset, size_t total_memory_used) {
+  TraversalModule(Map<Expr, Array<IntegerArray>> storage_device_map,  Map<Expr, Array<IntegerArray>> aid_dtype_map, std::map<int, size_t> temporary_data_storage,
+          std::map<int, size_t> temporary_data_offset, size_t total_memory_used) {
     storage_device_map_ = storage_device_map;
     aid_dtype_map_ = aid_dtype_map;
     temporary_data_storage_ = temporary_data_storage;
@@ -2422,33 +2304,36 @@ class TraversalModule : public ExprVisitor {
   size_t divRoundUp(size_t size, size_t word_size) { return (size + word_size - 1) / word_size; }
 
   void debug() {
-    LOG(INFO)<< "*********************************temporary_data_offset_********************************";
+    std::stringstream log_stream_tmp;
+    LOG(INFO)<< "******************************** temporary_data_offset_ *******************************";
     for (auto it : temporary_data_offset_)
       LOG(INFO) << "storage_id " << it.first << " offset " << it.second;
 
-    LOG(INFO)<< "*********************************Fused_funtion_offsets********************************";
+    LOG(INFO)<< "******************************** Fused_funtion_offsets ********************************";
+    log_stream_tmp << std::endl;
     for (uint32_t i = 0; i < io_offset_.size(); i++) {
-        printf("%d -- Fused_funtion_offsets {\n", i);
-        printf("\tinput_offsets:");
+        log_stream_tmp << i << " -- Fused_funtion_offsets {" << std::endl << "\tinput_offsets:";
         for (uint32_t j = 0; j < io_offset_[i].input_offsets.size(); j++) {
-            printf(" %ld,", io_offset_[i].input_offsets[j]);
+            log_stream_tmp << " " << io_offset_[i].input_offsets[j];
         }
-        printf("\n\toutput_offsets:");
+        log_stream_tmp << "\n\toutput_offsets:";
         for (uint32_t j = 0; j < io_offset_[i].output_offsets.size(); j++) {
-            printf(" %ld,", io_offset_[i].output_offsets[j]);
+            log_stream_tmp << " " << io_offset_[i].output_offsets[j];
         }
-        printf("\tinput_size:");
+        log_stream_tmp << "\n\tinput_size:";
         for (uint32_t j = 0; j < io_offset_[i].input_size.size(); j++) {
-            printf(" %ld,", io_offset_[i].input_size[j]);
+            log_stream_tmp << " " << io_offset_[i].input_size[j];
         }
-        printf("\n\toutput_size:");
+        log_stream_tmp << "\n\toutput_size:";
         for (uint32_t j = 0; j < io_offset_[i].output_size.size(); j++) {
-            printf(" %ld,", io_offset_[i].output_size[j]);
+            log_stream_tmp << " " << io_offset_[i].output_size[j];
         }
-        printf("\n\t}\n");
+        log_stream_tmp << "\n\t}\n";
     }
+    LOG(INFO)<< log_stream_tmp.str();
+    log_stream_tmp.clear();
 
-    LOG(INFO)<< "****************************Net_io********************************";
+    LOG(INFO)<< "********************************* Net_io **********************************************";
     for (auto i = input_.begin(); i != input_.end(); i++) {
         LOG_INFO << i->first << ", address: " << i->second.first << ", size is " 
             << i->second.second << "\n"; 
@@ -2459,35 +2344,38 @@ class TraversalModule : public ExprVisitor {
              << i->second.second << "\n"; 
     }
 
-    LOG(INFO)<< "******************************execute_order********************************";
-    LOG_INFO << "\tGot execute_order, size is "
-        << execution_order_.size() << "\n";
+    LOG(INFO)<< "******************************** execute_order ****************************************";
+    log_stream_tmp << std::endl;
+    log_stream_tmp << "\tGot execute_order, size is " << execution_order_.size() << std::endl;
     for (uint32_t i = 0; i < execution_order_.size(); i++) {
-        printf("    %d", execution_order_[i]);
+        log_stream_tmp << "    " << execution_order_[i];
     }
+    log_stream_tmp << std::endl;
 
-    LOG_INFO << "\tGot riscv_addr_list, size is "
-        << riscv_addr_list_.size() << "\n";
+    log_stream_tmp << "\tGot riscv_addr_list, size is "
+        << riscv_addr_list_.size() << std::endl;
     for (uint32_t i = 0; i < riscv_addr_list_.size(); i++) {
-        printf("%d  task address list is [wt_index, offset]:\n\t{", i);
+        log_stream_tmp << "The " << i << "th task address list is [wt_index, offset]:\n\t{";
         for (uint32_t j = 0; j < riscv_addr_list_[i].size(); j++) {
-            printf("[%d, %ld], ", riscv_addr_list_[i][j].first, riscv_addr_list_[i][j].second);
+            log_stream_tmp << "[" << riscv_addr_list_[i][j].first << ", " << riscv_addr_list_[i][j].second << "], ";
         }
-        printf(" }\n");
+        log_stream_tmp << "}" << std::endl;
     }
 
-    LOG_INFO << "\tGot riscv_wt_list, size is "
-          << riscv_wt_list_.size() << "\n";
-      printf("task wt list is [size, address]:\n\t{");
-      for (uint32_t i = 0; i < riscv_wt_list_.size(); i++) {
-          printf("[%ld, 0x%08x], ", riscv_wt_list_[i].first, (uint64_t)(riscv_wt_list_[i].second));
-      }
-      printf(" }\n");
+    log_stream_tmp << "\tGot riscv_wt_list, size is " << riscv_wt_list_.size() << std::endl
+        << "task wt list is [size, address]:\n\t{";
+    for (uint32_t i = 0; i < riscv_wt_list_.size(); i++) {
+        log_stream_tmp << "[" << riscv_wt_list_[i].first << ", "<< riscv_wt_list_[i].second << "], ";
+    }
+    log_stream_tmp << "}" << std::endl;
+    LOG(INFO) << log_stream_tmp.str();
+    log_stream_tmp.clear();
 
-    LOG(INFO)<< "*********************************riscv_code_********************************";
-    for (int s=0; s<riscv_code_.size();s++ ){
+    LOG(INFO)<< "******************************** riscv_code_ ******************************************";
+    for (size_t s=0; s<riscv_code_.size();s++ ){
+      LOG(INFO) << std::endl <<  "riscv code " << s;
       std::vector<Cpu_param *> test_riscv_code = riscv_code_[s];
-      for (int i =0 ; i < test_riscv_code.size() ; i++ ){
+      for (size_t i =0 ; i < test_riscv_code.size() ; i++ ){
         u_int32_t op_type = test_riscv_code[i]->cpu_operation.common_only_op.common.op_type;
         if (op_type == tvm::runtime::contrib::SOFTMAX ){
           LOG(INFO) << "************SOFTMAX************";
@@ -2502,7 +2390,7 @@ class TraversalModule : public ExprVisitor {
                   test_riscv_code[i]->cpu_operation_buffer.concat_buffers.dst_data);
           LOG(INFO) << "concat_param axis: " << test_riscv_code[i]->cpu_operation.concat_op.axis;
           LOG(INFO) << "common.input_num: " << test_riscv_code[i]->cpu_operation.concat_op.common.input_num;
-          for (int j = 0; j <  test_riscv_code[i]->cpu_operation.concat_op.common.input_num; j++)
+          for (size_t j = 0; j <  test_riscv_code[i]->cpu_operation.concat_op.common.input_num; j++)
             CodegenAIPU().output_info_other(test_riscv_code[i]->cpu_operation.concat_op.src_data[j]);
 
         }else if (op_type == tvm::runtime::contrib::SPLIT){
@@ -2512,11 +2400,11 @@ class TraversalModule : public ExprVisitor {
                   test_riscv_code[i]->cpu_operation_buffer.split_buffers.dst_data);
           LOG(INFO) << "split_param axis: " << test_riscv_code[i]->cpu_operation.split_op.axis;
           LOG(INFO) << "split_param indices[INPUT_MAX]: " ;
-          for (int j=0;j<INPUT_MAX;j++){
+          for (size_t j=0;j<INPUT_MAX;j++){
             LOG(INFO) << test_riscv_code[i]->cpu_operation.split_op.indices[j];
           }
           LOG(INFO) << "common.output_num: " << test_riscv_code[i]->cpu_operation.split_op.common.output_num;
-          for (int j = 0; j <  test_riscv_code[i]->cpu_operation.split_op.common.output_num; j++)
+          for (size_t j = 0; j <  test_riscv_code[i]->cpu_operation.split_op.common.output_num; j++)
             CodegenAIPU().output_info_other(test_riscv_code[i]->cpu_operation.split_op.dst_data[j]);
 
         }else if (op_type == tvm::runtime::contrib::SUM){
@@ -2590,7 +2478,7 @@ class TraversalModule : public ExprVisitor {
     }
   */
   void preprocess(Network_io &input, Network_io &output) {
-    // weight up limit offset 1.5G
+    // weight up limit offset 1.5G. TODO
     weight_offset_ = 0x5FF00000 ;
 
     input_ = input;
@@ -2710,7 +2598,6 @@ class TraversalModule : public ExprVisitor {
     // Expr expr = GetRef<Expr>(op);
     Function func;
     if (op->op.as<OpNode>()) {
-      // return {};
       LOG(FATAL) << "Operators should be transformed away; try applying"
                  << "the fuse_ops transformation to the expression.";
     } else if (op->op.as<GlobalVarNode>()) {
@@ -2721,8 +2608,6 @@ class TraversalModule : public ExprVisitor {
     } else {
       LOG(FATAL) << "TVM runtime does not support calls to " << op->op->GetTypeKey();
     }
-    //LOG(INFO) << "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@";
-
     //LOG(INFO) << "output: " << storage_device_map_[GetRef<Expr>(op)][0][0] <<",  "
     //<< storage_device_map_[GetRef<Expr>(op)][1][0] <<",  "
     //<< storage_device_map_[GetRef<Expr>(op)][2][0];
@@ -2738,7 +2623,7 @@ class TraversalModule : public ExprVisitor {
     for (size_t i = 0; i < istorage_id.size(); i++) {
       input_offsets.push_back(temporary_data_offset_[istorage_id[i]]);
     }
-    for (int i=0; i<ostorage_id.size(); i++) {
+    for (size_t i=0; i<ostorage_id.size(); i++) {
       output_offset.push_back(temporary_data_offset_[ostorage_id[i]]);
     }
     fused_function_offsets.output_offsets = output_offset;
@@ -2749,7 +2634,7 @@ class TraversalModule : public ExprVisitor {
     std::string compiler = func->GetAttr<String>(attr::kCompiler).value();
     // LOG(INFO) << compiler;
     if (compiler == "riscv") {
-      LOG(INFO) << "(DLA ) riscv func: " << AsText(func, false);
+      LOG(INFO) << "(DLA) riscv func: " << AsText(func, false);
       auto genCalibdata = GenCalibdata(i_scale_Vec, "riscv");
       genCalibdata.VisitExpr(func->body);
       auto calibdata = genCalibdata.GetCalibdata();
@@ -2760,7 +2645,7 @@ class TraversalModule : public ExprVisitor {
         scale_function_map_.insert(std::pair<Expr, std::vector<float>>(GetRef<Expr>(op), subfunc_in_scale));
       }
 
-      /////yuanyue 20220622 plan memory ,need to add CompileFunc4Riscv
+      // yuanyue 20220622 plan memory, need to add CompileFunc4Riscv
       Map<Expr, Array<IntegerArray>> storage_input_output_map; //expr id offset
       std:: vector <Expr> params;
       for (Var param : func->params) {     
@@ -2768,7 +2653,7 @@ class TraversalModule : public ExprVisitor {
       }
       if (1){
         std::vector<Integer> offsets;
-        for (int i = 0; i < output_offset.size(); i++){
+        for (size_t i = 0; i < output_offset.size(); i++){
           offsets.push_back(output_offset[i]);
         }
         ///yuanyue 20220621 quantized
@@ -2780,7 +2665,7 @@ class TraversalModule : public ExprVisitor {
       for (auto arg : op->args) {
         //std::vector<Integer> storage_ids;      
         std::vector<Integer> offsets;
-        for (int i =0; i < storage_device_map_[arg][0].size(); i++){
+        for (size_t i =0; i < storage_device_map_[arg][0].size(); i++){
           int storage_id = storage_device_map_[arg][0][i];
           offsets.push_back(temporary_data_offset_[storage_id]);
         }
@@ -2958,21 +2843,28 @@ class TraversalModule : public ExprVisitor {
 };
 
 runtime::Module CompileAipuFunc(Function func) {
-  // LOG(INFO) << AsText(func, false);
-  // some pass required global_symbol to be main
-  func = WithAttr(std::move(func), "global_symbol", runtime::String("main"));
+
+  // some passes require global_symbol to be main
+  func = WithAttr(std::move(func), tvm::attr::kGlobalSymbol, runtime::String("main"));
 
   DenseExpr DenseFunc;
   auto fDenseSp = DenseFunc.VisitExpr(func->body);
   auto mod_split = IRModule::FromExpr(fDenseSp);
   mod_split = transform::InferType()(mod_split);
-  // LOG_INFO << "mod_split " << AsText(mod_split, false);
   auto func_split = Downcast<Function>(mod_split->Lookup("main"));
+
+  auto mod_batchmatmul = IRModule::FromExpr(func_split);
+  mod_batchmatmul = transform::InferType()(mod_batchmatmul);
+  mod_batchmatmul = transform::AIPU_fuse_GELU()(mod_batchmatmul);
+  mod_batchmatmul = transform::AIPU_fuse_NORM()(mod_batchmatmul);
+  mod_batchmatmul = transform::BatchMatMulTransform()(mod_batchmatmul);
+  mod_batchmatmul = transform::FeatureToWeightTransform()(mod_batchmatmul);
+  auto func_batchmatmul = Downcast<Function>(mod_batchmatmul->Lookup("main"));
   
   CollectOutput collectoutput;
-  collectoutput.VisitExpr(func_split->body);
+  collectoutput.VisitExpr(func_batchmatmul->body);
   CustomizedAnnotation custom("dla", collectoutput.child_parent);
-  auto new_func = custom.annotate(func_split);
+  auto new_func = custom.annotate(func_batchmatmul);
   
   // Conv2dExpr Conv2dFunc;
   // auto fConv2dSp = Conv2dFunc.VisitExpr(func->body);
@@ -2993,20 +2885,27 @@ runtime::Module CompileAipuFunc(Function func) {
   // auto new_func = custom.annotate(func);
 
   auto mod = IRModule::FromExpr(new_func);
-  // LOG(INFO) << AsText(mod, false);
+
   // the first partition
   // mod = module_partition(mod);
+  // LOG_INFO << "before merge: " << AsText(mod, false);
   mod = relay::transform::MergeCompilerRegions()(mod);
+  // LOG_INFO << "after merge: " << AsText(mod, false);
   mod = relay::transform::PartitionGraph()(mod);
+  // LOG_INFO << "after partition: " << AsText(mod, false);
+
   mod = transform::FuseOps()(mod);
   mod = transform::Inline()(mod);
   mod = transform::InferType()(mod);
-  // LOG(INFO) << AsText(mod, false);
   // the second partition
   mod = eliminate_tuplenode(mod);
   LOG(INFO) << AsText(mod, false);
 
- //yuanyue 20220713 aid_dtype
+  // this pass is used to save the RISC-V relay subfunctions
+  //mod = transform::subfunctionsWriterTransform()(mod);
+  //
+
+  //yuanyue 20220713 aid_dtype
   Map<Expr, Array<IntegerArray>> aid_dtype_map;
   aid_dtype_map = AidDtypeExpr().GetAidDtype(Downcast<Function>(mod->Lookup("main")));
 
@@ -3022,8 +2921,6 @@ runtime::Module CompileAipuFunc(Function func) {
   total_memory_used = storage_allocator.GetTotalMemory();
   temporary_data_storage = storage_allocator.GetDataStorage();
   temporary_data_offset = storage_allocator.GetDataOffset();
-
-  
 
   Network_io input;
   Network_io output;
@@ -3044,12 +2941,10 @@ runtime::Module CompileAipuFunc(Function func) {
     output.insert(std::pair<std::string, std::pair<size_t, size_t>>(name, pa));
   }
 
-
   //auto traversal_module = TraversalModule(storage_device_map);
   auto traversal_module = TraversalModule(storage_device_map, aid_dtype_map, temporary_data_storage, temporary_data_offset, total_memory_used);
   traversal_module.preprocess(input, output);
   traversal_module.VisitExpr(Downcast<Function>(mod->Lookup("main"))->body);
-
 
   //traversal_module.debug();
   return traversal_module.AIPUModuleCreate();

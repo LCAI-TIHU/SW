@@ -86,6 +86,8 @@ enum operator_enum {
     ANY = 35U,
     ARGMAX = 36U,
     ARGMIN = 37U,
+    GELU = 38U,
+    NORM = 39U,
     FEATURETOWEIGHT = 255U
 };
 

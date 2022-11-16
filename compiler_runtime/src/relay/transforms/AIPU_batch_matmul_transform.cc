@@ -72,7 +72,7 @@ class BatchMatMulTransform_rewriter : public ExprRewriter {
     if(batch_matmul_call->op != batch_matmul_op_) {
       return post;
     }
-    LOG(INFO) << "Deal with a batch_matmul op" << std::endl;
+    // LOG(INFO) << "Deal with a batch_matmul op" << std::endl;
     if(batch_matmul_call->args[0].as<CallNode>()->op != quantize_op_ || batch_matmul_call->args[1].as<CallNode>()->op != quantize_op_) {
       LOG(FATAL) << "The inputs of batch_matmul should be quantized!!!" << std::endl;
       exit(0);
@@ -94,21 +94,21 @@ class BatchMatMulTransform_rewriter : public ExprRewriter {
 
     auto checked_type = batch_matmul_call->checked_type();
     const auto* tensor_type = checked_type.as<TensorTypeNode>();
-    LOG(INFO) << "Type information: " << checked_type->GetTypeKey() << " " << tensor_type->shape << " " << tensor_type->dtype << std::endl;
+    // LOG(INFO) << "Type information: " << checked_type->GetTypeKey() << " " << tensor_type->shape << " " << tensor_type->dtype << std::endl;
 
     auto checked_type_a = batch_matmul_call->args[0]->checked_type();
     const auto* tensor_type_a = checked_type_a.as<TensorTypeNode>();
     if(!tensor_type_a){
       return post;
     }
-    LOG(INFO) << "Type information of a: " << checked_type_a->GetTypeKey() << " " << tensor_type_a->shape << " " << tensor_type_a->dtype << std::endl;
+    //LOG(INFO) << "Type information of a: " << checked_type_a->GetTypeKey() << " " << tensor_type_a->shape << " " << tensor_type_a->dtype << std::endl;
 
     auto checked_type_b = batch_matmul_call->args[1]->checked_type();
     const auto* tensor_type_b = checked_type_b.as<TensorTypeNode>();
     if(!tensor_type_b){
       return post;
     }
-    LOG(INFO) << "Type information of b: " << checked_type_b->GetTypeKey() << " " << tensor_type_b->shape << " " << tensor_type_b->dtype << std::endl;
+    // LOG(INFO) << "Type information of b: " << checked_type_b->GetTypeKey() << " " << tensor_type_b->shape << " " << tensor_type_b->dtype << std::endl;
     
     const auto* batch_size_tmp = (tensor_type->shape[0]).as<IntImmNode>();
     int batch_size = batch_size_tmp->value;

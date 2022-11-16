@@ -1711,3 +1711,39 @@ def featuretoweight(data, newshape):
                     raise RuntimeError("Unrecognized shape type: %s" % err)
         newshape = tempshape
     return _make.featuretoweight(data, list(newshape))
+
+def AIPU_fuse_GELU(data, newshape):
+    if isinstance(newshape, Constant):
+        newshape = list(newshape.data.asnumpy())
+    if isinstance(newshape, int):
+        newshape = [newshape]
+    if isinstance(newshape, (tuple, list)):
+        tempshape = []
+        for shape in newshape:
+            if isinstance(shape, _expr.IntImm):
+                tempshape.append(shape.value)
+            else:
+                try:
+                    tempshape.append(int(shape))
+                except ValueError as err:
+                    raise RuntimeError("Unrecognized shape type: %s" % err)
+        newshape = tempshape
+    return _make.AIPU_fuse_GELU(data, list(newshape))
+
+def AIPU_fuse_NORM(data, newshape):
+    if isinstance(newshape, Constant):
+        newshape = list(newshape.data.asnumpy())
+    if isinstance(newshape, int):
+        newshape = [newshape]
+    if isinstance(newshape, (tuple, list)):
+        tempshape = []
+        for shape in newshape:
+            if isinstance(shape, _expr.IntImm):
+                tempshape.append(shape.value)
+            else:
+                try:
+                    tempshape.append(int(shape))
+                except ValueError as err:
+                    raise RuntimeError("Unrecognized shape type: %s" % err)
+        newshape = tempshape
+    return _make.AIPU_fuse_NORM(data, list(newshape))

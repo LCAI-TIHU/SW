@@ -1164,7 +1164,10 @@ def BatchMatMulTransform():
     return _ffi_api.BatchMatMulTransform()
 def FeatureToWeightTransform():
     return _ffi_api.FeatureToWeightTransform()
-
+def AIPU_fuse_GELU():
+    return _ffi_api.AIPU_fuse_GELU()
+def AIPU_fuse_NORM():
+    return _ffi_api.AIPU_fuse_NORM()
 def AddAfterDense():
     return _ffi_api.AddAfterDenseTransform()
 

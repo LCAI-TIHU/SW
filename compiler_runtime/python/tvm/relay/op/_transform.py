@@ -74,6 +74,8 @@ _reg.register_injective_schedule("adv_index")
 
 ####### AIPU
 _reg.register_injective_schedule("featuretoweight")
+_reg.register_injective_schedule("AIPU_GELU")
+_reg.register_injective_schedule("AIPU_NORM")
 
 
 # concatenate
