@@ -659,7 +659,7 @@ class StorageAllocator : public StorageAllocaBaseVisitor {
     int num_annotated_nodes = 0;
     int num_nodes = 0;
 
-    std:: vector <int> io_storage_ids;
+    std::vector<int> io_storage_ids;
     Expr func_body=GetNotQuantizedExpr(func->body); //the output op
     
     if (device_name =="riscv"){

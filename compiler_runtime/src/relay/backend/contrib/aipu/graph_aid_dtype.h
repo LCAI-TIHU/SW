@@ -48,6 +48,7 @@ namespace aipu {
 
 using IntegerArray = Array<Integer>;
 
+// TODO. Add "layout" into DtypeInfo. Maybe add "quant scale" into DtypeInfo
 struct DtypeInfo {
   /*! \brief Reference dtype */
   /* ref_dtype
@@ -207,9 +208,9 @@ class DtypeInfoBaseVisitor : public ExprVisitor {
 
 class DtypeInfoInit : public DtypeInfoBaseVisitor {
  public:
-    explicit DtypeInfoInit(support::Arena* arena) {
-      arena_ = arena;
-    }
+  explicit DtypeInfoInit(support::Arena* arena) {
+    arena_ = arena;
+  }
 
   /*! \return The internal dtype map */
   std::unordered_map<const ExprNode*, std::vector<DtypeInfo*> > GetInitTokenMap(

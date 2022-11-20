@@ -22,7 +22,7 @@
 
 #include "../../../transforms/pattern_utils.h"
 #include "../../utils.h"
-#include "IRelayParser.h"
+#include "RelayParser.h"
 #include "half.h"
 #include "main.h"
 #include "nvdla/ICompiler.h"
@@ -62,10 +62,6 @@ TVM_REGISTER_GLOBAL("AIPU_config_quantization_PER_FILTER")
   *rv = true;
 });
 
-using tvm::relay::contrib::aipu::IBinaryProtoBlob;
-using tvm::relay::contrib::aipu::IBlobNameToTensor;
-using tvm::relay::contrib::aipu::IRelayParser;
-
 static CompilerTestAppArgs defaultCompilerTestAppArgs = {
     /* .project = */ "OpenDLA",
     /* .inputPath = */ "./",
@@ -100,139 +96,6 @@ static NvDlaError beginWithNamedProfile(const CompilerTestAppArgs* appArgs, Comp
   if (!profile) {
     ORIGINATE_ERROR_FAIL(NvDlaError_NotInitialized, "Profile %s not initialized",
                          appArgs->profileName.c_str());
-  }
-
-fail:
-  return e;
-}
-
-static NvDlaError beginWithCfgProfile(const CompilerTestAppArgs* appArgs, CompilerTestInfo* i,
-                                      nvdla::DataFormat& inDataFormat) {
-  NvDlaError e = NvDlaSuccess;
-  NvDlaStatType stat;
-  std::string profileCfgFile;
-  std::string profileName;
-  nvdla::IProfiler* profiler;
-  nvdla::IProfile* profile;
-
-  profiler = i->wisdom->getProfiler();
-  if (!profiler) {
-    ORIGINATE_ERROR_FAIL(NvDlaError_NotInitialized, "Profiler not initialized");
-  }
-
-  profileName = appArgs->profileFile;
-  profileName = profileName.substr(0, profileName.find_last_of("."));
-  profile = profiler->getProfile(profileName.c_str());
-  if (!profile) {
-    ORIGINATE_ERROR_FAIL(NvDlaError_NotInitialized, "Profile %s not initialized",
-                         profileName.c_str());
-  }
-
-  profileCfgFile = i->profilesPath + appArgs->profileFile;
-  PROPAGATE_ERROR_FAIL(NvDlaStat(profileCfgFile.c_str(), &stat));
-
-  // first use settings from default profile
-  profile->initWithDefaultProfile();
-
-  // then populate the existing profile with params in the cfg file (overriding as necessary)
-  {
-    FILE* fp = fopen(profileCfgFile.c_str(), "r");
-    char readBuffer[TEST_PARAM_FILE_MAX_SIZE] = {0};
-
-    rapidjson::Document doc;
-    rapidjson::FileReadStream inStr(fp, readBuffer, sizeof(readBuffer));
-
-    doc.ParseStream(inStr);
-    if (doc.HasParseError()) {
-      ORIGINATE_ERROR_FAIL(NvDlaError_BadParameter, "JSON parsing error: %s",
-                           GetParseError_En(doc.GetParseError()));
-    }
-
-    {
-      nvdla::PixelFormat pf;
-
-      /* Gather compile params of the profile */
-      if (doc["profile"].HasMember("compute_precision")) {
-        rapidjson::Value& compPrecision = doc["profile"]["compute_precision"];
-        std::string prec = compPrecision.GetString();
-        nvdla::DataType dt = nvdla::DataType::getEnum(prec);
-
-        if (dt.v() == nvdla::DataType::UNKNOWN) {
-          ORIGINATE_ERROR_FAIL(NvDlaError_NotSupported, "Precision %s not supported", prec.c_str());
-        }
-        profile->setComputePrecision(dt);
-      }
-
-      if (doc["profile"].HasMember("weight_packing")) {
-        rapidjson::Value& weightPacking = doc["profile"]["weight_packing"];
-        std::string wtPacking = weightPacking.GetString();
-
-        if (wtPacking == "COMPRESSED")
-          profile->setCanCompressWeights(true);
-        else
-          profile->setCanCompressWeights(false);
-      }
-
-      if (doc["profile"].HasMember("sdp_pdp_on_fly")) {
-        rapidjson::Value& sdpPdpOnFly = doc["profile"]["sdp_pdp_on_fly"];
-        profile->setCanSDPPDPOnFly(sdpPdpOnFly.GetBool());
-      }
-
-      if (doc["profile"].HasMember("sdp_merge_math_ops")) {
-        rapidjson::Value& sdpMergeMathOps = doc["profile"]["sdp_merge_math_ops"];
-        profile->setCanSDPMergeMathOps(sdpMergeMathOps.GetBool());
-      }
-
-      if (doc["profile"].HasMember("sdp_fuse_subengine_ops")) {
-        rapidjson::Value& sdpFuseSubEngineOps = doc["profile"]["sdp_fuse_subengine_ops"];
-        profile->setCanSDPFuseSubEngineOps(sdpFuseSubEngineOps.GetBool());
-      }
-
-      if (doc["profile"].HasMember("can_winograd")) {
-        rapidjson::Value& canWinograd = doc["profile"]["can_winograd"];
-        profile->setCanWinograd(canWinograd.GetBool());
-      }
-
-      /* Gather global params of the profile */
-      if (doc["profile"]["network_input"].HasMember("format")) {
-        rapidjson::Value& inFormat = doc["profile"]["network_input"]["format"];
-        pf = nvdla::PixelFormat::getEnum(inFormat.GetString());
-        if (pf.v() == nvdla::PixelFormat::UNKNOWN) {
-          ORIGINATE_ERROR_FAIL(NvDlaError_NotSupported, "Pixel format %s not supported",
-                               inFormat.GetString());
-        }
-        profile->setNetworkInputSurfaceFormat(pf);
-        if (pf < nvdla::PixelFormat::FEATURE) {
-          inDataFormat = nvdla::DataFormat::NHWC;
-        } else if ((pf == nvdla::PixelFormat::FEATURE) || (pf == nvdla::PixelFormat::FEATURE_X8)) {
-          inDataFormat = nvdla::DataFormat::NCxHWx;
-        } else {
-          PROPAGATE_ERROR_FAIL(NvDlaError_NotSupported, "Don't support input pixel format: %s",
-                               pf.c_str());
-        }
-      }
-
-      if (doc["profile"]["network_input"].HasMember("pixel_offset_x")) {
-        rapidjson::Value& pxOffX = doc["profile"]["network_input"]["pixel_offset_x"];
-        profile->setNetworkInputPixelOffX(pxOffX.GetInt());
-      }
-      if (doc["profile"]["network_input"].HasMember("pixel_offset_y")) {
-        rapidjson::Value& pxOffY = doc["profile"]["network_input"]["pixel_offset_y"];
-        profile->setNetworkInputPixelOffY(pxOffY.GetInt());
-      }
-
-      if (doc["profile"]["network_output"].HasMember("format")) {
-        rapidjson::Value& outFormat = doc["profile"]["network_output"]["format"];
-        pf = nvdla::PixelFormat::getEnum(outFormat.GetString());
-        if (pf.v() == nvdla::PixelFormat::UNKNOWN) {
-          ORIGINATE_ERROR_FAIL(NvDlaError_NotSupported, "Pixel format %s not supported",
-                               outFormat.GetString());
-        }
-        profile->setNetworkOutputSurfaceFormat(pf);
-      }
-    }
-
-    fclose(fp);
   }
 
 fail:
@@ -333,7 +196,7 @@ NvDlaError parseTensorScales(const CompilerTestAppArgs* appArgs, CompilerTestInf
                              nvdla::INetwork* network, std::vector<float>& calibdata,
                              std::vector<std::vector<float>> i_scale_Vec) {
   NvDlaError e = NvDlaSuccess;
-  NvDlaStatType stat;
+  //NvDlaStatType stat;
 
   // populate the scaling factor/dynamic range of each of the tensors on the network
   std::vector<nvdla::ILayer*> networkLayers = network->getLayers();
@@ -679,6 +542,7 @@ class CustomizedAnnotation : tvm::relay::ExprMutator {
   std::string compiler_;
 };
 
+// TODO: is module_partition used?
 tvm::IRModule module_partition(tvm::IRModule module) {
   std::set<std::string> riscv_operator_set = {"tanh",
                                               "nn.dense",
@@ -1195,9 +1059,13 @@ TVM_REGISTER_GLOBAL("relay.ext.aipu.PatterTableResult")
     
 std::pair<uint64_t, uint8_t*> CompileFunc4Dla(Function func, std::vector<float> calibdata,
                                               std::vector<std::vector<float>> i_scale_Vec) {
+  LOG(INFO) << "################################ Begin CompileFunc4Dla #######################################";
+  LOG(INFO) << "Original Relay Function: " << std::endl << AsText(func, false);
   if (func->body->IsInstance<VarNode>()) {
     return std::pair<uint64_t, uint8_t*>(0, nullptr);
   }
+
+  // merge expressions to deal with the case where multiple relay oeprators map to a single DLA operator
   auto symbol_name = func->GetAttr<String>(tvm::attr::kGlobalSymbol);
   func = WithAttr(std::move(func), tvm::attr::kGlobalSymbol, runtime::String("main"));
   func = WithAttr(std::move(func), attr::kCompiler, NullValue<ObjectRef>());
@@ -1205,75 +1073,65 @@ std::pair<uint64_t, uint8_t*> CompileFunc4Dla(Function func, std::vector<float> 
   std::string ext_patterntable = "relay.ext.aipu.patterntable";
   auto pf = tvm::runtime::Registry::Get(ext_patterntable);
   if (pf != nullptr) {
-    Array<PatterTableResult> patter_table = (*pf)();
+    Array<PatterTableResult> pattern_table = (*pf)();
     std::vector<PackedFunc> checksfunc;
-    for (auto pattern : patter_table) {
+    for (auto pattern : pattern_table) {
       for (auto checkname : pattern->checkfuncname) {
         auto getpf = tvm::runtime::Registry::Get(static_cast<std::string>(checkname));
         checksfunc.push_back(*getpf);
       }
     }
-    mod = transform::MergeComposite(patter_table[0]->pattern_names, patter_table[0]->patterns,
+    mod = transform::MergeComposite(pattern_table[0]->pattern_names, pattern_table[0]->patterns,
                                     checksfunc)(mod);
   }
   auto funcmod = Downcast<Function>(mod->Lookup("main"));
   funcmod = WithAttr(std::move(funcmod), tvm::attr::kGlobalSymbol, symbol_name.value());
+  LOG(INFO) << "Relay Function after Composition: " << std::endl << AsText(funcmod, false);
 
+  // prepare configs
   CompilerTestAppArgs testAppArgs = defaultCompilerTestAppArgs;
   CompilerTestInfo testInfo;
-
-  std::string wisdomPath = testAppArgs.outputPath + "wisdom.dir/";
-  std::string removeCmd = "rm -rf " + wisdomPath;
-  if (std::system(removeCmd.c_str()) != 0) LOG(FATAL) << "system command failed: " << removeCmd;
-  NvDlaMkdir(const_cast<char*>(wisdomPath.c_str()));
   testInfo.wisdom = nullptr;
-  testInfo.wisdomPath = wisdomPath;
   testInfo.pData = nullptr;
+  testInfo.wisdomPath = testAppArgs.outputPath + "wisdom.dir/";
+  std::string removeCmd = "rm -rf " + testInfo.wisdomPath;
+  if (std::system(removeCmd.c_str()) != 0) LOG(FATAL) << "system command failed: " << removeCmd;
+  NvDlaMkdir(const_cast<char*>(testInfo.wisdomPath.c_str())); // is const_cast<char*> necessary?
 
-  IRelayParser* parser = tvm::relay::contrib::aipu::createRelayParser();
-  LOG(INFO) << "creating new wisdom context...";
   testInfo.wisdom = nvdla::createWisdom();
   if (!testInfo.wisdom) LOG(FATAL) << "createWisdom() failed";
-  LOG(INFO) << "opening wisdom context...";
   if (!testInfo.wisdom->open(testInfo.wisdomPath))
     LOG(FATAL) << "wisdom->open() failed to open: " << testInfo.wisdomPath;
 
   // IR translation: relay to INetwork
-  nvdla::INetwork* network = NULL;
+  nvdla::INetwork* network = nullptr;
   network = nvdla::createNetwork();
   if (!network) LOG(FATAL) << "createNetwork() failed";
-  const IBlobNameToTensor* b = NULL;
-  b = parser->parse("", "", funcmod, network);
-  if (network->getNumOutputs() <= 0) {
-    int outs = parser->identifyOutputs(network);
-    LOG(INFO) << "Marking total " << outs << " outputs";
-  }
+  RelayParser parser;
+  parser.parse(funcmod, network);
+
+  // Parse quantization scales
   if (testAppArgs.computePrecision == nvdla::DataType::INT8) {
     LOG(INFO) << "parsing calibration table...";
     parseTensorScales(&testAppArgs, &testInfo, network, calibdata, i_scale_Vec);
   }
-  LOG(INFO) << "attaching parsed network to the wisdom...";
-  if (!testInfo.wisdom->setNetworkTransient(network)) LOG(FATAL) << "wisdom->setNetworkTransient() failed";
 
   // compile INetwork to loadable
+  LOG(INFO) << "attaching parsed network to the wisdom...";
+  if (!testInfo.wisdom->setNetworkTransient(network)) LOG(FATAL) << "wisdom->setNetworkTransient() failed";
   if (testInfo.wisdom->getNetwork()->getNumOutputs() == 0) LOG(FATAL) << "output number is 0";
   nvdla::ICompiler* compiler = testInfo.wisdom->getCompiler();
   if (!compiler) LOG(FATAL) << "wisdom->getCompiler() failed";
   if (testAppArgs.configtarget == "") LOG(FATAL) << "No target config found to load";
 
   std::string profileName = "";
-  nvdla::DataFormat inDataFormat = nvdla::DataFormat::UNKNOWN;
   if (testAppArgs.profileName != "") {
     beginWithNamedProfile(&testAppArgs, &testInfo);
     profileName = testAppArgs.profileName;
-  } else if (testAppArgs.profileFile != "") {
-    beginWithCfgProfile(&testAppArgs, &testInfo, inDataFormat);
-    profileName = testAppArgs.profileFile;
-    profileName = profileName.substr(0, profileName.find_last_of("."));
   } else {
-    LOG(FATAL) << "No profile supplied to load";
+    LOG(FATAL) << "No profile name supplied";
   }
-  inDataFormat = inDataFormat == nvdla::DataFormat::UNKNOWN ? testAppArgs.inDataFormat : inDataFormat;
+  nvdla::DataFormat inDataFormat = testAppArgs.inDataFormat;
 
   nvdla::IProfiler* profiler;
   nvdla::IProfile* profile;
@@ -1284,6 +1142,7 @@ std::pair<uint64_t, uint8_t*> CompileFunc4Dla(Function func, std::vector<float> 
   profile->setComputePrecision(testAppArgs.computePrecision);
   profile->setNetworkInputDataFormat(inDataFormat);
 
+  // TODO. What is the difference between setNetworkInputDataFormat and setNetworkInputSurfaceFormat?
   switch (inDataFormat) {
     case nvdla::DataFormat::NHWC:
       if (testAppArgs.computePrecision == nvdla::DataType::HALF) {
@@ -1296,7 +1155,7 @@ std::pair<uint64_t, uint8_t*> CompileFunc4Dla(Function func, std::vector<float> 
       break;
     case nvdla::DataFormat::NCxHWx:
     case nvdla::DataFormat::NCHW:
-    case nvdla::DataFormat::UNKNOWN:  // atleast start the test with feature data format
+    case nvdla::DataFormat::UNKNOWN:  // at least start the test with feature data format
     default:
       if (std::strcmp(testAppArgs.configtarget.c_str(), "opendla-small") == 0)
         profile->setNetworkInputSurfaceFormat(nvdla::PixelFormat::FEATURE_X8);
@@ -1305,7 +1164,7 @@ std::pair<uint64_t, uint8_t*> CompileFunc4Dla(Function func, std::vector<float> 
   }
   if (testAppArgs.computePrecision == nvdla::DataType::INT8) {
     profile->setTensorScalingMode(nvdla::TensorScalingMode::PER_TENSOR);
-    //switch (appArgs->quantizationMode) {
+    //switch (appArgs->quantizationMode) {}
     switch (theQuantizationMode) {
       case nvdla::QuantizationMode::PER_FILTER:
         profile->setQuantizationMode(nvdla::QuantizationMode::PER_FILTER);
@@ -1344,11 +1203,11 @@ std::pair<uint64_t, uint8_t*> CompileFunc4Dla(Function func, std::vector<float> 
   nvdla::destroyNetwork(testInfo.wisdom->getNetwork());
   LOG(INFO) << "closing wisdom context...";
   testInfo.wisdom->close();
-  destroyRelayParser(parser);
   if (testInfo.wisdom != nullptr) {
     nvdla::destroyWisdom(testInfo.wisdom);
     testInfo.wisdom = nullptr;
   }
+  LOG(INFO) << "################################  End CompileFunc4Dla  #######################################";
   return std::pair<uint64_t, uint8_t*>(size, buf);
 }
 
@@ -1460,7 +1319,7 @@ class DenseExpr : public ExprMutator {
       sp_n_part = int(data_shape_row / weight_thr);
     } else if (data_shape_row % weight_thr != 0 && sp_n_part != 0 &&
                data_shape_row % sp_n_part == 0) {
-      sp_n_part = sp_n_part;
+      //sp_n_part = sp_n_part;
     } else if (data_shape_row % weight_thr != 0 && sp_n_part != 0 &&
                data_shape_row % sp_n_part != 0 && data_shape_row % (sp_n_part + 1) == 0) {
       sp_n_part = sp_n_part + 1;
@@ -1509,7 +1368,7 @@ class DenseExpr : public ExprMutator {
 
     int64_t spTh = data_shape_row / sp_n_part;
 
-    int index = 0;
+    //int index = 0;
     tvm::RelayExpr slice[sp_n_part];
     tvm::RelayExpr dense[sp_n_part];
     tvm::RelayExpr dense_exp[sp_n_part];
@@ -1572,7 +1431,7 @@ class DenseExpr : public ExprMutator {
     auto sp_dense_call_merge = MakeReduce(new_op, axis, 0, 0, "sum");
     if(is_quantize) sp_dense_call_merge = relay::Call(quantize_op, {sp_dense_call_merge, scale_out_[0], scale_out_[1], scale_out_[2]}, Attrs(quantize_attrs), {});
     auto sp_dense_call = Downcast<Call>(sp_dense_call_merge);
-    // LOG_INFO<<"splitted after split merge "<<AsText(sp_dense_call_merge, false);
+    // LOG(INFO)<<"splitted after split merge "<<AsText(sp_dense_call_merge, false);
 
     return sp_dense_call;
   }
@@ -1604,7 +1463,6 @@ class DenseExpr : public ExprMutator {
     convert_dense_weights_NHWC2NCHW(weightdata,iishape);
 
     memcpy((float*)argconst->data->data,weightdata,weightsize*sizeof(float));
-    //LOG(INFO)<< "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     return Call(op->op, op->args, op->attrs, op->type_args);
   }
 
@@ -1748,7 +1606,7 @@ class Conv2dExpr : public ExprMutator {
       const tvm::relay::CallNode* conv2d_call2;
 	  
       const tvm::relay::CallNode* root_call = new_args[0].as<tvm::relay::CallNode>();
-      const tvm::relay::CallNode* arg_call = op->args[0].as<tvm::relay::CallNode>();
+      //const tvm::relay::CallNode* arg_call = op->args[0].as<tvm::relay::CallNode>();
 	    
       //add constant
       Constant Add_Constant;
@@ -1899,9 +1757,9 @@ class Conv2dExpr : public ExprMutator {
       size_t weight_size = weight_size_get;
       size_t weight_size_sp = weight_size / sp_n_part;
       size_t weight_size_sp_bit = (sizeof(float) * weight_size) / sp_n_part;
-      //LOG_INFO << "weight_size " << weight_size;
-      //LOG_INFO << "weight_size_sp " << weight_size_sp;
-      //LOG_INFO << "weight_size_sp_bit " << weight_size_sp_bit;
+      //LOG(INFO) << "weight_size " << weight_size;
+      //LOG(INFO) << "weight_size_sp " << weight_size_sp;
+      //LOG(INFO) << "weight_size_sp_bit " << weight_size_sp_bit;
       
       void* param_weights[sp_n_part];
       int size[sp_n_part][H][W];
@@ -1911,7 +1769,7 @@ class Conv2dExpr : public ExprMutator {
       }
 	  
       int in_channel = C / sp_n_part;
-      LOG_INFO << "in_channel " << in_channel;
+      LOG(INFO) << "in_channel " << in_channel;
       for(int i = 0; i < sp_n_part; i++){
         for(int j = 0; j < H; j++){
           for(int k = 0; k < W; k++){
@@ -2012,7 +1870,7 @@ class Conv2dExpr : public ExprMutator {
 	  
       //concatenate and sum
       auto new_op = MakeConcatenate(Tuple(tuple), 0);
-      //LOG_INFO <<"new_op "<< AsText(new_op, false);
+      //LOG(INFO) <<"new_op "<< AsText(new_op, false);
 
       Array<Integer> axis;
       axis.push_back(0);
@@ -2022,7 +1880,7 @@ class Conv2dExpr : public ExprMutator {
         sp_conv_call_merge = relay::Call(quantize_op, {sp_conv_call_merge, scale_out_[0], scale_out_[1], scale_out_[2]}, Attrs(quantize_attrs), {});
       }
       auto sp_conv_call = Downcast<Call>(sp_conv_call_merge);
-      LOG_INFO << "splitted after split merge " << AsText(sp_conv_call_merge, false);
+      LOG(INFO) << "splitted after split merge " << AsText(sp_conv_call_merge, false);
 
       return sp_conv_call; 
     }
@@ -2156,7 +2014,7 @@ class GenCalibdata : public ExprVisitor {
         //     scale = inscle_vec[0][0];  // Jasper TODO
         //   }
         // } 
-        if (arg_op_name == "nn.pad" || compiler_ == "dla" && arg_op_name == "reshape") {
+        if (arg_op_name == "nn.pad" || (compiler_ == "dla" && arg_op_name == "reshape")) {
           return;
         } else {
           auto argconst = Downcast<Constant>(call->args[1]);
@@ -2335,12 +2193,12 @@ class TraversalModule : public ExprVisitor {
 
     LOG(INFO)<< "********************************* Net_io **********************************************";
     for (auto i = input_.begin(); i != input_.end(); i++) {
-        LOG_INFO << i->first << ", address: " << i->second.first << ", size is " 
+        LOG(INFO) << i->first << ", address: " << i->second.first << ", size is " 
             << i->second.second << "\n"; 
     }
 
     for (auto i = output_.begin(); i != output_.end(); i++) {
-        LOG_INFO << i->first << ", address: "  << i->second.first << ", size is " 
+        LOG(INFO) << i->first << ", address: "  << i->second.first << ", size is " 
              << i->second.second << "\n"; 
     }
 
@@ -2484,7 +2342,7 @@ class TraversalModule : public ExprVisitor {
     input_ = input;
     output_ = output;
 
-    index = 0;
+    //index = 0;
     std::string calibTableFile = defaultCompilerTestAppArgs.calibTable;
     if (calibTableFile != "") {
       FILE* fp = fopen(calibTableFile.c_str(), "r");
@@ -2866,33 +2724,11 @@ runtime::Module CompileAipuFunc(Function func) {
   CustomizedAnnotation custom("dla", collectoutput.child_parent);
   auto new_func = custom.annotate(func_batchmatmul);
   
-  // Conv2dExpr Conv2dFunc;
-  // auto fConv2dSp = Conv2dFunc.VisitExpr(func->body);
-  // LOG(INFO) << AsText(fConv2dSp, false);
-  // auto mod_split = IRModule::FromExpr(fConv2dSp);
-  // mod_split = transform::InferType()(mod_split);
-  // LOG_INFO << "mod_split " << AsText(mod_split, false);
-  // auto func_split = Downcast<Function>(mod_split->Lookup("main"));
-  // CollectOutput collectoutput;
-  // collectoutput.VisitExpr(func_split->body);
-  // CustomizedAnnotation custom("dla", collectoutput.child_parent);
-  // auto new_func = custom.annotate(func_split);
-
-  
-  // CollectOutput collectoutput;
-  // collectoutput.VisitExpr(func->body);
-  // CustomizedAnnotation custom("dla", collectoutput.child_parent);
-  // auto new_func = custom.annotate(func);
-
   auto mod = IRModule::FromExpr(new_func);
-
   // the first partition
   // mod = module_partition(mod);
-  // LOG_INFO << "before merge: " << AsText(mod, false);
   mod = relay::transform::MergeCompilerRegions()(mod);
-  // LOG_INFO << "after merge: " << AsText(mod, false);
   mod = relay::transform::PartitionGraph()(mod);
-  // LOG_INFO << "after partition: " << AsText(mod, false);
 
   mod = transform::FuseOps()(mod);
   mod = transform::Inline()(mod);
@@ -2900,11 +2736,9 @@ runtime::Module CompileAipuFunc(Function func) {
   // the second partition
   mod = eliminate_tuplenode(mod);
   LOG(INFO) << AsText(mod, false);
-
   // this pass is used to save the RISC-V relay subfunctions
   //mod = transform::subfunctionsWriterTransform()(mod);
   //
-
   //yuanyue 20220713 aid_dtype
   Map<Expr, Array<IntegerArray>> aid_dtype_map;
   aid_dtype_map = AidDtypeExpr().GetAidDtype(Downcast<Function>(mod->Lookup("main")));

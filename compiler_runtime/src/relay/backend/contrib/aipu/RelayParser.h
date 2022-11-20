@@ -43,105 +43,39 @@
 #include "priv/Type.h"
 #include "priv/Network.h"
 #include "priv/Layer.h"
-#include "IRelayParser.h"
 #include <tvm/relay/function.h>
-
-namespace ditcaffe{
-class NetParameter;
-}
 
 namespace tvm {
 namespace relay {
 namespace contrib {
 namespace aipu{
-namespace priv {
 
-class BlobNameToTensor : public IBlobNameToTensor
-{
-public:
-    virtual void add(const std::string& name, nvdla::ITensor* tensor);
-
-    virtual nvdla::ITensor* find(const char* name) const;
-    virtual nvdla::ITensor*& operator[](const std::string& name);
-
-    virtual void setTensorNames();
-    virtual ~BlobNameToTensor();
-
-private:
-    std::map<std::string, nvdla::ITensor*> mMap;
+class BlobNameToTensor {
+ public:
+  virtual void add(const std::string& name, nvdla::ITensor* tensor);
+  virtual nvdla::ITensor* find(const char* name) const;
+  virtual nvdla::ITensor*& operator[](const std::string& name);
+  virtual void setTensorNames();
+  virtual ~BlobNameToTensor();
+ private:
+  std::map<std::string, nvdla::ITensor*> mMap;
 };
 
-class BinaryProtoBlob : public IBinaryProtoBlob
-{
-public:
-    BinaryProtoBlob(void* memory, nvdla::DataType type, nvdla::Dims4 dimensions);
-
-    const void*	getData();
-    nvdla::Dims4 getDimensions();
-    void	destroy();
-protected:
-    void* mMemory;
-    nvdla::DataType mDataType;
-    nvdla::Dims4 mDimensions;
-    virtual ~BinaryProtoBlob();
-};
-
-class RelayParser;
-
-class RelayParserFactory
-{
-public:
-    typedef nvdla::compiler::priv::PrivPair<IRelayParser *, RelayParser *> RelayParserPrivPair;
-
-    static RelayParserPrivPair newRelayParser();
-    static NvDlaError deleteRelayParser(IRelayParser *parser);
-
-    static RelayParser *priv(IRelayParser *);
-    static IRelayParser *i(RelayParser *);
-    static IRelayParser *self(void *);
-
-protected:
-    static nvdla::compiler::priv::BiMap<IRelayParser *, RelayParser *> s_priv;
-    static nvdla::compiler::priv::BiMap<void *, IRelayParser *> s_self;
-};
-
-
-class RelayParser : public IRelayParser
-{
-public:
-    RelayParser() :
-        IRelayParser(),
-        mDeploy(NULL),
-        mModel(NULL),
-        mTmpAllocs(),
-        mDimsCallback(NULL),
-        mBlobNameToTensor(NULL),
-        mProtobufBufferSize(1024 << 20)
+class RelayParser {
+ public:
+  RelayParser() :
+    mDimsCallback(NULL),
+    mBlobNameToTensor(NULL)
     { }
 
-    virtual const IBlobNameToTensor* parse(const char* deploy,
-                                           const char* model,
-                                           const tvm::relay::Function& func,
-                                           nvdla::INetwork* network);
-    virtual int identifyOutputs(nvdla::INetwork * network);
-    virtual ~RelayParser();
-
-    void setProtobufBufferSize(size_t size) { mProtobufBufferSize = size; }
-
-    // read a blob from a protobuf file (typically a mean blob)
-    static BinaryProtoBlob* parseBinaryProto(const char* fileName);
-
-    static void shutdownProtobufLibrary();
-private:
-    ditcaffe::NetParameter * mDeploy;
-    ditcaffe::NetParameter * mModel;
-    std::vector<void*> mTmpAllocs;
-    nvdla::INetwork::OutputDimensionsFormula* mDimsCallback;
-    IBlobNameToTensor* mBlobNameToTensor;
-    size_t mProtobufBufferSize;
+  void parse(const tvm::relay::Function& func, nvdla::INetwork* network);
+  virtual int identifyOutputs(nvdla::INetwork * network);
+  virtual ~RelayParser();
+ private:
+  nvdla::INetwork::OutputDimensionsFormula* mDimsCallback;
+  BlobNameToTensor* mBlobNameToTensor;
 };
 
-}
 }
 }
 }
