@@ -28,15 +28,15 @@
 
 /*!
  * \file src/relay/backend/contrib/aipu/graph_aid_dtype.h
- * \brief get true dtype
- *   the program in the graph executor.
+ * \brief get true dtypes of OPs in relay graph.
  */
-
 
 #include <tvm/relay/analysis.h>
 #include <tvm/relay/expr.h>
 #include <tvm/relay/expr_functor.h>
 #include <tvm/tir/op.h>
+
+#include <sstream>
 
 #include "../../../../support/arena.h"
 #include "../../utils.h"
@@ -49,19 +49,24 @@ namespace aipu {
 using IntegerArray = Array<Integer>;
 
 // TODO. Add "layout" into DtypeInfo. Maybe add "quant scale" into DtypeInfo
+/*!
+ * \brief Reference dtype
+ *
+ * ref_dtype:
+ *   1U for RINT
+ *   2U for RUINT
+ *   3U for RFLOAT
+ *   4U for RBFLOAT
+ *   5U for RINT8
+ *
+ * dtype_name:
+ *   1 for riscv
+ *   2 for dla
+ *   3 for host
+ */
 struct DtypeInfo {
-  /*! \brief Reference dtype */
-  /* ref_dtype
-  RINT = 1U,
-  RUINT = 2U,
-  RFLOAT = 3U,
-  RBFLOAT = 4U,
-  RINT8 = 5U,
-  */
   int ref_dtype{0};
-  /*! \brief name (1 for riscv ; 2 for dla; 3 for host)  */
   int dtype_name{0};
-
 };
 
 class DtypeInfoBaseVisitor : public ExprVisitor {
@@ -71,7 +76,7 @@ class DtypeInfoBaseVisitor : public ExprVisitor {
     c_name_ = "func_";
     for (Var param : func->params) {  
       Expr expr = GetRef<Expr>(param.operator->());   
-      CreateDtypes(expr, "func", true); 
+      CreateDtypes(expr, "func"); 
     }
     VisitExpr(func);
   }
@@ -79,10 +84,6 @@ class DtypeInfoBaseVisitor : public ExprVisitor {
   void VisitExpr_(const VarNode* op) final {
     // Do nothing.
   }
-
-  //void VisitExpr_(const FunctionNode* op) final {
-    // do not recurse into sub function.
-  //}
 
   void VisitExpr_(const GlobalVarNode* op) final {
     // Do nothing.
@@ -94,11 +95,10 @@ class DtypeInfoBaseVisitor : public ExprVisitor {
 
   void VisitExpr_(const ConstantNode* op) final {
     Expr expr = GetRef<Expr>(op);
-    this->CreateDtypes(expr, "host", true); 
+    this->CreateDtypes(expr, "host"); 
   }
 
   void VisitExpr_(const TupleNode* op) final {
-    //LOG(INFO) << "!!!!!!!!!!!!!!!!!!!!!!!!!!!! Go into tuple !!!!!!!!!!!!!!!!!!!!!!!" ;
     std::vector<DtypeInfo*> fields;
     for (Expr field : op->fields) {
       auto tokens = GetDtype(field);
@@ -121,13 +121,11 @@ class DtypeInfoBaseVisitor : public ExprVisitor {
     dtype_map_[op] = GetDtype(op->body);
   }
 
-  Expr GetNotQuantizedExpr(Expr expr){
-    if (expr->IsInstance<CallNode>()){
+  Expr GetNotQuantizedExpr(Expr expr) {
+    if (expr->IsInstance<CallNode>()) {
       auto op = Downcast<Call>(expr);
       if (const auto* op_node = op->op.as<OpNode>()) { 
-      //const auto* op_node = call->op.as<OpNode>();
       std::string op_name = GetRef<Op>(op_node)->name;
-      //LOG(INFO) << "op_name: " << op_name;
       if (op_name  == "relay.op.annotation.simulated_quantize" || op_name.substr(0, 10) == "annotation")
         return GetNotQuantizedExpr(op->args[0]);
       }
@@ -142,68 +140,93 @@ class DtypeInfoBaseVisitor : public ExprVisitor {
   std::string c_name_;
   /*!
    * \brief Get the necessary token.
+   *
    * \param expr The expression.
+   *
    * \return The corresponding token.
    */
   std::vector<DtypeInfo*>& GetDtype(const Expr& expr) {
     if (expr->IsInstance<CallNode>()){
-      //auto op = Downcast<Call>(expr);
-      const CallNode* call_node = expr.as<tvm::relay::CallNode>();
+      const CallNode* call_node = expr.as<CallNode>();
       if (const auto* op_node = call_node->op.as<OpNode>()) { 
-      //const auto* op_node = call->op.as<OpNode>();
-      const auto op_name = GetRef<Op>(op_node)->name;
-      //LOG(INFO) << "op_name: " << op_name;
-      if (op_name == "relay.op.annotation.simulated_quantize" || op_name == "annotation.stop_fusion" || op_name == "annotation.cast_hint")
-        return GetDtype(call_node->args[0]);
+        const auto op_name = GetRef<Op>(op_node)->name;
+        if (op_name == "relay.op.annotation.simulated_quantize" || op_name == "annotation.stop_fusion" || op_name == "annotation.cast_hint")
+          return GetDtype(call_node->args[0]);
       }
     }
     this->VisitExpr(expr);
     auto expr_node = expr.as<ExprNode>();
     auto it = dtype_map_.find(expr_node);
-    ICHECK(it != dtype_map_.end()) << "error" << AsText(expr, false);
+    ICHECK(it != dtype_map_.end()) << "Error: " << AsText(expr, false);
     return it->second;
   }
 
-  void GetOriginType(const TensorTypeNode *type, int& dy_type){
-      if (type->dtype.code() == DataType::kInt)
-        dy_type = 1;
-      else if (type ->dtype.code() == DataType::kUInt)
-        dy_type = 2;
-      else if (type ->dtype.code() == DataType::kFloat)
-        dy_type = 3;
-      else if (type ->dtype.code() == DataType::kBFloat && type->dtype.bits() == 16)
-        dy_type = 4;
-      else
-        LOG(FATAL) << "Datatype not supported ";
-    }
-  int GetRefName(std::string dtype_name){
+  void GetOriginType(const TensorTypeNode *type, int& dy_type) {
+    if (type->dtype.code() == DataType::kInt)
+      dy_type = 1;
+    else if (type ->dtype.code() == DataType::kUInt)
+      dy_type = 2;
+    else if (type ->dtype.code() == DataType::kFloat)
+      dy_type = 3;
+    else if (type ->dtype.code() == DataType::kBFloat && type->dtype.bits() == 16)
+      dy_type = 4;
+    else
+      LOG(FATAL) << "Datatype not supported ";
+  }
+
+  int GetRefName(std::string dtype_name) {
     int ref = 0;
-    if (dtype_name == "func"){
-        ref = 1;//default riscv
-      }
-      else if (dtype_name == "dla"){
-        ref = 2;//dla
-      }
-      else if (dtype_name == "riscv"){
-        ref = 1;//riscv
-      }
-      else if (dtype_name == "host"){
-        ref = 3; //host
-      }
-      else {
-        LOG(FATAL) << "dtype_name: " << dtype_name;
-      }
+    if (dtype_name == "func")
+      ref = 1; // default riscv
+    else if (dtype_name == "dla")
+      ref = 2; // dla
+    else if (dtype_name == "riscv")
+      ref = 1; // riscv
+    else if (dtype_name == "host")
+      ref = 3; // host
+    else
+      LOG(FATAL) << "dtype_name: " << dtype_name;
     return ref;
   }
   
   /*!
    * \brief Populate the token Dtypes to set op's Dtypes
+   *
    * \param op The node to be processed.
    * \param dtype_name the decive name: "func" "dla" "riscv" "host"
    * \param datatype  RINT = 1U, RUINT = 2U, RFLOAT = 3U, RBFLOAT = 4U, RINT8 = 5U,
-   * \param can_reuse Whether we can re-use the tok.
    */
-  virtual void CreateDtypes(Expr op, std::string dtype_name, bool can_reuse) = 0;
+  virtual void CreateDtypes(Expr op, std::string dtype_name) = 0;
+
+  void PrintDTypes(std::unordered_map<const ExprNode*, std::vector<DtypeInfo*> > dtype_map) {
+    LOG(INFO) << "############################# Print DTypes ####################################";
+    LOG(INFO) << dtype_map.size();
+    for (auto& x : dtype_map) {
+      std::stringstream log_stream_tmp;
+      Expr expr = GetRef<Expr>(x.first);
+      if (expr.as<CallNode>()) {
+        if (expr.as<CallNode>()->op.as<FunctionNode>()) {
+          log_stream_tmp << "FunctionNode: " << AsText(GetRef<Function>(expr.as<CallNode>()->op.as<FunctionNode>()), false);
+        } else if (expr.as<CallNode>()->op.as<OpNode>()) {
+          log_stream_tmp << "OpNode. Op name: " << expr.as<CallNode>()->op.as<OpNode>()->name;
+        }
+      } else if (expr.as<TupleNode>()) {
+        log_stream_tmp << "TupleNode";
+      } else if (expr.as<ConstantNode>()) {
+        log_stream_tmp << "ConstantNode. Shape: " << expr.as<ConstantNode>()->tensor_type().get()->shape;
+      } else if (expr.as<VarNode>()) {
+        log_stream_tmp << "VarNode. Var name: " << expr.as<VarNode>()->name_hint();
+      } else {
+        log_stream_tmp << AsText(expr, false);
+      }
+      for (size_t i = 0; i < x.second.size(); ++i) {
+        log_stream_tmp << ". The " << i << "th element. ref_dtype: " << x.second[i]->ref_dtype << "; dtype_name: " << x.second[i]->dtype_name;
+      }
+      LOG(INFO) << log_stream_tmp.str();
+    }
+    LOG(INFO) << "########################### Print DTypes end ##################################";
+    return;
+  }
 };
 
 class DtypeInfoInit : public DtypeInfoBaseVisitor {
@@ -213,8 +236,7 @@ class DtypeInfoInit : public DtypeInfoBaseVisitor {
   }
 
   /*! \return The internal dtype map */
-  std::unordered_map<const ExprNode*, std::vector<DtypeInfo*> > GetInitTokenMap(
-      const Function& func) {
+  std::unordered_map<const ExprNode*, std::vector<DtypeInfo*> > GetInitTokenMap (const Function& func) {
     this->Run(func);
     return std::move(dtype_map_);
   }
@@ -222,30 +244,25 @@ class DtypeInfoInit : public DtypeInfoBaseVisitor {
  protected:
   using DtypeInfoBaseVisitor::VisitExpr_;
 
-  void CreateDtypes(Expr op, std::string dtype_name,bool can_reuse) final{
+  void CreateDtypes(Expr op, std::string dtype_name) final {
     auto expr_node = op.as<ExprNode>();
     ICHECK(!dtype_map_.count(expr_node));
-    
     std::vector<DtypeInfo*> tokens;
-
     if (const auto* tuple_type = op->checked_type().as<TupleTypeNode>()) {
       for (Type t : tuple_type->fields) {
         const auto* ttype = t.as<TensorTypeNode>();
+        // TODO. The fields of TupleNode are assumed to be tensors
         ICHECK(ttype);
         DtypeInfo* token = arena_->make<DtypeInfo>();
         //if (dtype_name == "func" || dtype_name == "dla" ){
-        if (dtype_name == "dla" ){
+        if (dtype_name == "dla") {
           token->ref_dtype = 5;
-        }
-        else{
+        } else {
           int dy_type = 3;
-          GetOriginType(ttype,dy_type);
+          GetOriginType(ttype, dy_type);
           token->ref_dtype = dy_type;
         }
         token->dtype_name = GetRefName(dtype_name);
-        //if (token->ref_dtype==0){
-        //  LOG(FATAL) << "not suport: " << AsText(op,false);
-        //}
         tokens.push_back(token);
       }
     } else {
@@ -253,81 +270,64 @@ class DtypeInfoInit : public DtypeInfoBaseVisitor {
       ICHECK(ttype);
       DtypeInfo* token = arena_->make<DtypeInfo>();
       //if (dtype_name == "func" || dtype_name == "dla" ){
-      if (dtype_name == "dla" ){
+      if (dtype_name == "dla") {
         token->ref_dtype = 5;
-      }
-      else{
+      } else {
         int dy_type = 3;
-        GetOriginType(ttype,dy_type);
+        GetOriginType(ttype, dy_type);
         token->ref_dtype = dy_type;
       }
       token->dtype_name = GetRefName(dtype_name);
-      //if (token->ref_dtype==0){
-      //  LOG(FATAL) << "not suport: " << AsText(op,false);
-      //}
       tokens.push_back(token);
     }
     dtype_map_[expr_node] = tokens;
-    //LOG(INFO)<< "dtype_map_: " << dtype_map_.size();
   }
 
   void VisitExpr_(const CallNode* op) final {
-    
     Expr expr = GetRef<Expr>(op);
     // for each input, visit argument token.
     for (Expr arg : op->args) {
       arg = GetNotQuantizedExpr(arg);
       VisitExpr(arg);
     }
-    // deal with function
-    if (c_name_ == "func_"){
+    if (c_name_ == "func_") {
       Function func_node;
-      if(op->op.as<FunctionNode>()){
+      if (op->op.as<FunctionNode>()) {
         func_node = GetRef<Function>(op->op.as<FunctionNode>());
-      } 
-      else {
+      } else {
         LOG(FATAL) << "TVM Dtype does not support calls to " << op->op->GetTypeKey();
       }
       std::string compiler = func_node->GetAttr<String>(attr::kCompiler).value();
-
       if (compiler == "riscv")  // riscv func
       {
         // create token for the call node.
-        CreateDtypes(expr, "riscv", true);
-        for (auto param : func_node->params){
-          Expr param_expr = GetRef<Expr>(param.operator->());   
-          CreateDtypes(param_expr, "riscv", true); 
-          //LOG(INFO)<< "param_expr: "<< AsText(param_expr,false);
+        CreateDtypes(expr, "riscv");
+        for (auto param : func_node->params) {
+          Expr param_expr = GetRef<Expr>(param.operator->());
+          CreateDtypes(param_expr, "riscv"); 
+          //LOG(INFO)<< "param_expr: "<< AsText(param_expr, false);
         }
         c_name_ = "riscv_";
         VisitExpr(func_node->body);  //go into riscv func, visit riscv op
         c_name_ = "func_";
-      }
-      else if(compiler.substr(0, 3) == "dla"){
+      } else if (compiler.substr(0, 3) == "dla") {
         // create token for the call node.
-        CreateDtypes(expr, "dla", true);
-      }
-      else {
+        CreateDtypes(expr, "dla");
+      } else {
         LOG(FATAL) << "TVM Dtype does not support compiler name: " << compiler;
       }
-
-    }
-    else if (c_name_ == "riscv_"){
+    } else if (c_name_ == "riscv_") {
       if (const auto* op_node = op->op.as<OpNode>()) { 
         const auto op_name = GetRef<Op>(op_node)->name;
-        // quantized op
-        if (op_name == "relay.op.annotation.simulated_quantize" || op_name == "annotation.stop_fusion" || op_name == "annotation.cast_hint"){
-          //VisitExpr(op->args[0]);
+        // quantized op, do nothing
+        if (op_name == "relay.op.annotation.simulated_quantize" || op_name == "annotation.stop_fusion" || op_name == "annotation.cast_hint") {
+        } else { // normal ops, create types
+          CreateDtypes(expr, "riscv");
         }
-        else{ // normal ops
-          CreateDtypes(expr, "riscv", true);
-        }
-      }
-      else{ 
+      } else {  
         LOG(FATAL) << "TVM Dtype does not support calls to : " << op->op->GetTypeKey();
       }
-    }
-    else {
+    } else {
       LOG(FATAL) << "Dtype does not support c_name: " << c_name_;
     }
   }
@@ -339,14 +339,11 @@ class DtypeInfoInit : public DtypeInfoBaseVisitor {
 
 class AidDtypeExpr : public DtypeInfoBaseVisitor {
  public:
-  
   // Run true dtype for a function.
   Map<Expr, Array<IntegerArray> > GetAidDtype(const Function& func) {
-    
     prototype_ = DtypeInfoInit(&arena_).GetInitTokenMap(func);
-    //LOG(INFO) << "&&&&&&&&&&&&&&&&&&&&&&&&prototype_&&&&&&&&&&&&&&&&&&&&&&&&&&: " << prototype_.size();
+    //PrintDTypes(prototype_);
     this->Run(func);
-
     Map<Expr, Array<IntegerArray>> dtypemap;
     for (const auto& kv : dtype_map_) {
       std::vector<Integer> ref_dtypes;
@@ -361,7 +358,6 @@ class AidDtypeExpr : public DtypeInfoBaseVisitor {
         ref_dtypes.push_back(tok->ref_dtype);
         d_names.push_back(tok->dtype_name);
       }
-      
       dtypemap.Set(GetRef<Expr>(kv.first), Array<IntegerArray>({ref_dtypes, d_names}));
     }
     //debug();
@@ -372,189 +368,140 @@ class AidDtypeExpr : public DtypeInfoBaseVisitor {
  protected:
   using DtypeInfoBaseVisitor::VisitExpr_;
 
-  // override create token by getting token as prototype requirements.
-  void CreateDtypes(Expr op, std::string dtype_name, bool can_reuse)  final{
+  void CreateDtypes(Expr op, std::string dtype_name) final {
     auto expr_node = op.as<ExprNode>();
-    //ICHECK(!dtype_map_.count(expr_node))<< "error" << AsText(op, false);
     auto it = prototype_.find(expr_node);
-    if (it == prototype_.end() && dtype_name == "host"){
+    if (it == prototype_.end() && dtype_name == "host") {
       return;
     }
     ICHECK(it != prototype_.end());
     std::vector<DtypeInfo*> tokens;
     for (DtypeInfo* tok : it->second) {
-      //if (tok->ref_dtype==0){
-      //  LOG(FATAL) << "not suport: " << AsText(op,false);
-      //}
       tokens.push_back(tok);
     }
     dtype_map_[expr_node] = tokens;
-    //LOG(INFO)<< "dtype_map_: " << dtype_map_.size();
   }
 
   void CorrectDtypes(Expr op, std::string dtype_name, std::vector< int > dy_types) {
     auto expr_node = op.as<ExprNode>();
-    ICHECK(dtype_map_.count(expr_node))<< "error" << AsText(op, false);
+    ICHECK(dtype_map_.count(expr_node))<< "Error " << AsText(op, false);
     auto it = prototype_.find(expr_node);
     ICHECK(it != prototype_.end());
-    for (int i =0; i<dtype_map_[expr_node].size();i++) {    
+    for (size_t i =0; i<dtype_map_[expr_node].size(); i++) {    
       dtype_map_[expr_node][i]->dtype_name = GetRefName(dtype_name);
       dtype_map_[expr_node][i]->ref_dtype = dy_types[i];
-      //if (dtype_map_[expr_node][i]->ref_dtype==0){
-      //  LOG(FATAL) << "not suport: " << AsText(op,false);
-      //}
     }
   }
 
-  void CopyDtypes(Expr src, Expr dst ) {
+  void CopyDtypes(Expr src, Expr dst) {
     auto src_expr = src.as<ExprNode>();
     auto dst_expr = dst.as<ExprNode>();
     ICHECK(dtype_map_.count(src_expr));
     std::vector<DtypeInfo*> tokens;
     for (DtypeInfo* tok : dtype_map_[src_expr]) {
-      //if (tok->ref_dtype==0){
-      //  LOG(FATAL) << "not suport: " << AsText(dst,false);
-      //}
       tokens.push_back(tok);
     }
     dtype_map_[dst_expr] = tokens;
   }
   
-  // The call map
   void VisitExpr_(const CallNode* op) final {
     Expr expr = GetRef<Expr>(op);
-    //expr = GetNotQuantizedExpr(expr);
-    //auto op = expr.as<CallNode>();
-    //if(!op){
-    //  LOG(INFO) << "expr type: " << expr->GetTypeKey();
-    //  LOG(FATAL) << "not suport: " << AsText(expr,false);
-    //}
     // deal with the last function of dla function
-    if (c_name_ == "last_func_"){
-      //LOG(INFO) << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!go into last_func_!!!!!!!!!!!!!!!!!!!!!!!!";
+    if (c_name_ == "last_func_") {
       AdjustLastFunction(op);
       return;
     }
-
     // deal with the last normal riscv op of quantized op
-    if (c_name_ == "last_riscv_"){
-      //LOG(INFO) << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!go into last_riscv_!!!!!!!!!!!!!!!!!!!!!!!!";
+    if (c_name_ == "last_riscv_") {
       AdjustLastRiscvOp(op);
       return;
     }
-
-    if (c_name_ == "func_" && dtype_map_.count(op)){
-      return;
-    }
-    if (c_name_ == "riscv_" && dtype_map_.count(op)){
+    if ((c_name_ == "func_" || c_name_ == "riscv_") && dtype_map_.count(op)) {
       return;
     }
     // for each input, visit argument token.
     for (Expr arg : op->args) {
-      //arg = GetNotQuantizedExpr(arg);
       VisitExpr(arg);
     }
-    // deal with function
-    if (c_name_ == "func_"){
+    if (c_name_ == "func_") {
       Function func_node;
-      if(op->op.as<FunctionNode>()){
+      if (op->op.as<FunctionNode>()) {
         func_node = GetRef<Function>(op->op.as<FunctionNode>());
-      } 
-      else {
+      } else {
         LOG(FATAL) << "TVM Dtype does not support calls to " << op->op->GetTypeKey();
       }
       std::string compiler = func_node->GetAttr<String>(attr::kCompiler).value();
-
-      if (compiler == "riscv")  // riscv func
-      {
-        // create token for the call node.
-        CreateDtypes(expr, "riscv", true);
-        c_name_ = "riscv_";
+      if (compiler == "riscv") { // riscv func
         Expr func_body_expr = GetNotQuantizedExpr(func_node->body);
-        VisitExpr(func_body_expr);  //go into riscv func, visit riscv op
-        c_name_ = "func_";
-        // the dtype of riscv func 
-        auto func_body_node = func_body_expr.as<ExprNode>();
-        if (dtype_map_.count(func_body_node)){ //not quantized op
-          //dtype_map_[op]=dtype_map_[func_body_node];
-          CopyDtypes(func_body_expr,expr);
-        }
-        else { //quantized op
-          std::vector <int> dy_types;
-          for (int i =0; i<dtype_map_[op].size();i++) {
-            dy_types.push_back(5);//int8
-          }
-          CorrectDtypes(expr, "dla", dy_types );//riscv
-        }
-
-        for (int t=0; t< func_node->params.size(); t++){
+        // deal with Dtypes for the input VarNode
+        for (size_t t = 0; t < func_node->params.size(); t++) {
           auto arg_node = op->args[t].as<ExprNode>();
           auto param_expr = GetRef<Expr>(func_node->params[t].operator->());
-          if (func_body_expr == param_expr){
-            // this rsicv function only contains quantized op, its params should be in 8
+          if (func_body_expr == param_expr) { // this rsicv function only contains quantized op, its params should be int 8
             auto param_node = func_node->params[t].operator->();
-            ICHECK(prototype_.count(param_node)) << AsText(param_expr,false);
+            ICHECK(prototype_.count(param_node)) << AsText(param_expr, false);
             auto it = prototype_.find(op);
-            std::vector <int> dy_types;
-            //LOG(INFO)<<"it->second.size(): " << it->second.size();
-            for (int i =0; i<it->second.size();i++) {
-              dy_types.push_back(5);//int8
+            std::vector<int> dy_types;
+            for (size_t i =0; i<it->second.size(); i++) {
+              dy_types.push_back(5); // int8
             }
-            CreateDtypes(param_expr, "riscv", true);
-            CorrectDtypes(param_expr,"dla", dy_types);//riscv
-            //LOG(INFO)<< AsText(op->args[t],false);
-            if (op->args[t]->IsInstance<VarNode>()){
-              CopyDtypes(param_expr,op->args[t]); //Expr src, Expr dst
-            }
-            else{
+            CreateDtypes(param_expr, "riscv");
+            CorrectDtypes(param_expr, "dla", dy_types);
+            if (op->args[t]->IsInstance<VarNode>()) {
+              CopyDtypes(param_expr, op->args[t]); 
+            } else {
               LOG(FATAL) << "op->args[t] is not VarNode: " << op->args[t]->GetTypeKey();
             }
-            
-          }
-          else{
-            // the dtype of riscv input op  (the dtype of riscv function's params) 
-            if(dtype_map_.count(arg_node)){
-              CopyDtypes(op->args[t],param_expr);
-            }
-            else{
-              LOG(FATAL) << "op->args[t] is not in dtype_map_: " << AsText(op->args[t],false);
+          } else { // the dtype of riscv input op (the dtype of riscv function's params) 
+            if (dtype_map_.count(arg_node)) {
+              CopyDtypes(op->args[t], param_expr);
+            } else {
+              LOG(FATAL) << "op->args[t] is not in dtype_map_: " << AsText(op->args[t], false);
             }
           }
         }
-      }
-      else if(compiler.substr(0, 3) == "dla"){
+        // deal with Dtypes for the CallNode
+        CreateDtypes(expr, "riscv");
+        // deal with Dtypes for the OPs in the function body
+        c_name_ = "riscv_";
+        VisitExpr(func_body_expr);  // go into riscv func, visit riscv op
+        c_name_ = "func_";
+        // correct Dtypes of the CallNode 
+        if (dtype_map_.count(func_body_expr.as<ExprNode>())) {
+          CopyDtypes(func_body_expr, expr);
+        } else { // The case where the function has a single quantization OP. This case occurs in the first function of the network.
+          std::vector <int> dy_types;
+          for (size_t i = 0; i < dtype_map_[op].size(); i++) {
+            dy_types.push_back(5); // int8
+          }
+          CorrectDtypes(expr, "dla", dy_types);
+        }
+      } else if (compiler.substr(0, 3) == "dla") {
         // create token for the call node.
-        CreateDtypes(expr, "dla", true);
+        CreateDtypes(expr, "dla");
         c_name_ = "last_func_";
         for (auto call_arg : op->args) {
           VisitExpr(call_arg);
         }
         c_name_ = "func_";
-      }
-      else {
+      } else {
         LOG(FATAL) << "TVM Dtype does not support compiler name: " << compiler;
       }
-
-    }
-    else if (c_name_ == "riscv_"){
-      if (const auto* op_node = op->op.as<OpNode>()) { 
+    } else if (c_name_ == "riscv_") {
+      if (const auto* op_node = op->op.as<OpNode>()) {
         const auto op_name = GetRef<Op>(op_node)->name;
-        // quantized op
-        if (op_name == "relay.op.annotation.simulated_quantize" || op_name == "annotation.stop_fusion" || op_name == "annotation.cast_hint"){
+        if (op_name == "relay.op.annotation.simulated_quantize" || op_name == "annotation.stop_fusion" || op_name == "annotation.cast_hint") { // quantized op
           c_name_ = "last_riscv_";
           Expr riscv_expr = GetNotQuantizedExpr(op->args[0]);
           VisitExpr(riscv_expr);
           c_name_ = "riscv_";
+        } else { // normal ops
+          CreateDtypes(expr, "riscv");
         }
-        else{ // normal ops
-          CreateDtypes(expr, "riscv", true);
-        }
+      } else {
+        LOG(FATAL) << "TVM Dtype does not support calls to: " << op->op->GetTypeKey();
       }
-      else{ 
-        LOG(FATAL) << "TVM Dtype does not support calls to : " << op->op->GetTypeKey();
-      }
-    }
-    else {
+    } else {
       LOG(FATAL) << "Dtype does not support c_name: " << c_name_;
     }
   }
@@ -564,115 +511,96 @@ class AidDtypeExpr : public DtypeInfoBaseVisitor {
     TParent::VisitExpr(expr);
   }
 
-  void AdjustLastRiscvOp(const CallNode* op, std::string dtype_name = "riscv"){
+  void AdjustLastRiscvOp(const CallNode* op, std::string dtype_name = "riscv") {
     Expr expr = GetRef<Expr>(op);
     Expr op_expr = GetNotQuantizedExpr(expr);
-    if (op_expr->IsInstance<CallNode>()){
-      std::vector <int> dy_types;
+    if (op_expr->IsInstance<CallNode>()) {
+      std::vector<int> dy_types;
       auto op_node = op_expr.as<ExprNode>();
-      for (int i =0; i<dtype_map_[op_node].size();i++) {
-        dy_types.push_back(5);//int8
+      for (size_t i =0; i<dtype_map_[op_node].size(); i++) {
+        dy_types.push_back(5); // int8
       }
-      CorrectDtypes(op_expr, dtype_name, dy_types );//riscv
-    }
-    else{
+      CorrectDtypes(op_expr, dtype_name, dy_types); // riscv
+    } else {
       LOG(FATAL) << "Dtype does not support op_expr to " << op_expr->GetTypeKey();
     }
   }
 
-  void AdjustLastFunction(const CallNode* op, std::string dtype_name = "dla"){  
+  void AdjustLastFunction(const CallNode* op, std::string dtype_name = "dla") {  
     Expr expr = GetRef<Expr>(op);
     std::vector <int> dy_types;
-    for (int i =0; i<dtype_map_[op].size();i++) {
-      dy_types.push_back(5);//int8
+    for (size_t i =0; i<dtype_map_[op].size(); i++) {
+      dy_types.push_back(5); // int8
     }
-    CorrectDtypes(expr, dtype_name, dy_types );//dla
-
-    if(expr->IsInstance<CallNode>()){
+    CorrectDtypes(expr, dtype_name, dy_types); // dla
+    if (expr->IsInstance<CallNode>()) {
       Function func_node;
-      if(op->op.as<FunctionNode>()){
+      if (op->op.as<FunctionNode>()) {
         func_node = GetRef<Function>(op->op.as<FunctionNode>());
-      } 
-      else {
+      } else {
         LOG(FATAL) << "function Dtype does not support node to " << op->op->GetTypeKey();
       }
-
-      if (const auto* call_node = func_node->body.as<CallNode>()){
+      if (func_node->body.as<CallNode>()) {
         Expr op_expr = GetNotQuantizedExpr(func_node->body);
-        auto op_node = op_expr.as<ExprNode>();
-        //dtype_map_[op_node]=dtype_map_[op]; 
-        CopyDtypes(expr,op_expr);
-      }
-      else if(const auto* tuple_node = func_node->body.as<TupleNode>()){
+        CopyDtypes(expr, op_expr);
+      } else if (const auto* tuple_node = func_node->body.as<TupleNode>()) {
         Expr op_expr = GetNotQuantizedExpr(func_node->body);
-        auto op_node = op_expr.as<ExprNode>();
-        //dtype_map_[op_node]=dtype_map_[op];
-        CopyDtypes(expr,op_expr);
-        //ICHECK(tuple_node->fields.size()== dtype_map_[op_node].size());
+        CopyDtypes(expr, op_expr);
         for (auto field : tuple_node->fields){
           Expr expr_branch = GetNotQuantizedExpr(field);
           auto op_branch = expr_branch.as<ExprNode>();
-          std::vector <int> tmp_types;
-          for (int s = 0; s< dtype_map_[op_branch].size(); s++){
-            tmp_types.push_back(5); //int8
+          std::vector<int> tmp_types;
+          for (size_t s = 0; s< dtype_map_[op_branch].size(); s++) {
+            tmp_types.push_back(5); // int8
           }
-          CorrectDtypes(expr_branch, dtype_name, tmp_types );//dla
-          CopyDtypes(expr_branch,field);//dla
+          CorrectDtypes(expr_branch, dtype_name, tmp_types); // dla
+          CopyDtypes(expr_branch, field); // dla
         }
-      }
-      else{
-        LOG(INFO) << AsText(func_node,false);
+      } else {
+        LOG(INFO) << AsText(func_node, false);
         LOG(FATAL) << "riscv op Dtype does not support calls to " << op->op->GetTypeKey();
       }
-    }
-    else{
-      LOG(INFO) << AsText(expr,false);
+    } else {
+      LOG(INFO) << AsText(expr, false);
       LOG(FATAL) << "riscv op Dtype does not support calls to " << op->op->GetTypeKey();
     }
-
   }
 
-  void debug(){
+  void debug() {
     LOG(INFO) << "&&&&&&&&&&&&&&&&&&&&&&&&&&&&dtype_map_--new--debug&&&&&&&&&&&&&&&&&&&&&&&&&&&: " << dtype_map_.size();
-    for (auto kv: dtype_map_){
+    for (auto kv: dtype_map_) {
       LOG(INFO) << " !!!!!!!!!!!!!!!!!!!!!!!!dtype_map_!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!";
-      for (auto token: kv.second){
+      for (auto token: kv.second) {
         LOG(INFO) <<"dtype: " << token->ref_dtype << " name: " << token->dtype_name << " type: " << kv.first->GetTypeKey();
       }
       Expr call = GetRef<Expr>(kv.first);
-      if (call->IsInstance<CallNode>()){
+      if (call->IsInstance<CallNode>()) {
         const CallNode* call_node = call.as<tvm::relay::CallNode>();
-        if (call_node->op.as<OpNode>()){
+        if (call_node->op.as<OpNode>()) {
           auto callop_node = call_node->op.as<OpNode>();
           std::string callop_name = tvm::runtime::GetRef<Op>(callop_node)->name;
           LOG(INFO)<< "op_name: " << callop_name;
         }
-        else if(call_node->op.as<FunctionNode>()){
+        else if (call_node->op.as<FunctionNode>()) {
           Function func_node = GetRef<Function>(call_node->op.as<FunctionNode>());
           std::string global_symbol = func_node->GetAttr<String>(tvm::attr::kGlobalSymbol).value();
           LOG(INFO)<< "kComposite: " << global_symbol;
         }
-      }
-      else{
-        if (call->IsInstance<VarNode>()){
+      } else {
+        if (call->IsInstance<VarNode>()) {
           LOG(INFO) << AsText(call,false);
         }
       }
-      
       LOG(INFO) << "&&&&&&&&&&&&&&&&&&&&&&&&&&&&dtype_map_---new---debug&&&&&&&&&&&&&&&&&&&&&&&&&&&";
     }
   }
 
-  private:
+ private:
   
   // allocator
   support::Arena arena_;
   /*! \brief internal prototype dtype map */
   std::unordered_map<const ExprNode*, std::vector<DtypeInfo*> > prototype_;
-
-  // IntegerArray : 1st dtype_bytes ; 2ed name (1 for riscv ; 2 for dla; 3 for host) 
-  //Map <Expr, IntegerArray> aid_dtype_; 
-  Expr aid_expr_;
 };
 
 }  // namespace aipu
