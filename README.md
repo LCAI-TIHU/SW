@@ -2,9 +2,7 @@
 
 ## Introduction
 
-TIHU is an AI computing development platform based on the RISC-V instruction set. It provides software stack and hardware and is a complete set of solutions that can verify different AI frameworks and AI algorithms.   It can also be used to explore the current AI open sources ecology, such as RISC-V instruction set, deep-learning accelerator, AI compiler &  runtime, AI algorithms, and frameworks.      
-
-TIHU will accelerate the implementation of your AI algorithms.
+TIHU is an AI computing development platform based on the RISC-V instruction set. It provides software stack and hardware and is a complete set of solutions that support different AI frameworks and AI algorithms. It can be directly used for AI processor development and verification.  It can also be used to explore the current AI open sources ecology, such as RISC-V instruction set, deep-learning accelerator, AI compiler &  runtime, AI algorithms, and frameworks. TIHU will accelerate the implementation of your AI project.
 
 Currently, TIHU only supports TensorFlow. Pytorch will be supported very soon. As shown below, several CNN models have been tested on the Inspur F37X card. 
 
